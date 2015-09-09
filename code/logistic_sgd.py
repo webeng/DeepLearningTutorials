@@ -202,11 +202,12 @@ def load_data(dataset):
         urllib.urlretrieve(origin, dataset)
 
     print '... loading data'
-
+    #print dataset
     # Load the dataset
     f = gzip.open(dataset, 'rb')
     train_set, valid_set, test_set = cPickle.load(f)
     f.close()
+
     #train_set, valid_set, test_set format: tuple(input, target)
     #input is an numpy.ndarray of 2 dimensions (a matrix)
     #witch row's correspond to an example. target is a

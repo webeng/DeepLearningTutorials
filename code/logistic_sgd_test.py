@@ -222,9 +222,7 @@ def load_data(dataset):
 
     pkl_file = open( '../data/test_set.pkl', 'rb')
     test_set = cPickle.load(pkl_file)
-
-    #print dataset
-    #print train_set[0]
+    
     #train_set, valid_set, test_set format: tuple(input, target)
     #input is an numpy.ndarray of 2 dimensions (a matrix)
     #witch row's correspond to an example. target is a

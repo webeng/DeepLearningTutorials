@@ -8,7 +8,11 @@ data/mnist.pkl.gz
 data/mnist_py3k.pkl.gz
 data/Nottingham.zip
 data/Nottingham
+data/cnn-furniture
 data/midi.zip
+data/test_set.pkl
+data/train_set.pkl
+data/valid_set.pkl
 html
 *.pyc
 *~

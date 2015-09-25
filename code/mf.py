@@ -4,6 +4,7 @@ from theano.ifelse import ifelse
 import theano, time, numpy
 from theano import shared
 rng = numpy.random
+from datetime import datetime
 
 state = shared(float(0))
 
@@ -39,7 +40,7 @@ R = [
 
 R = numpy.array(R).astype(theano.config.floatX)
 tR = theano.shared(R.astype(theano.config.floatX),name="R")
-print type(tR)
+#print type(tR)
 ncols = len(R[0])
 nrows = len(R)
 #print 
@@ -57,14 +58,11 @@ f_test = function([row,row_values], dot_product , updates=[(total_squared_sum, t
 for row in xrange(0,nrows):
     f_test(row,R[row,:])
 
-print total_squared_sum.get_value()
+#print total_squared_sum.get_value()
 
 
-def matrix_factorization(R, P, Q, K, steps=5000, alpha=0.0002, beta=0.02):
+def t_matrix_factorization(R, P, Q, K, steps=5000, alpha=0.0002, beta=0.02):
     Q = Q.T
-
-    # p_row = theano.shared(rng.random((1,4)).astype(theano.config.floatX))
-    # q_col = theano.shared(rng.random((1,5)).astype(theano.config.floatX))
 
     for step in xrange(steps):
         for i in xrange(len(R)):
@@ -84,6 +82,91 @@ def matrix_factorization(R, P, Q, K, steps=5000, alpha=0.0002, beta=0.02):
                         e = e + (beta/2) * (pow(P[i][k],2) + pow(Q[k][j],2))
         if e < 0.001:
             break
+    return P, Q.T
+
+def matrix_factorization_vectorised(R, P, Q, K, steps=50000, alpha=0.0002, beta=0.02):
+    Q = Q.T
+
+    A = R.copy()
+    A[ A > 0 ] = 1
+
+    for step in xrange(steps):
+        #print "Step: {} matrix_factorization_vectorised".format(step)
+        # Calculate the current cost. We need an auxiliar matrix to not take into account the values of R that are z. We basically need it for the step if R[i][j] > 0: in the original algo
+        AUX = numpy.dot(P,Q) * A
+        E = R - AUX
+
+        #E = R - numpy.dot(P,Q) # Original computation
+        P = P + alpha * (2 * numpy.dot(E,Q.T) - beta * P)
+        Q = Q + alpha * (2 * numpy.dot(P.T,E) - beta * Q)
+        
+        # print Q.shape
+        # print P.shape        
+        # print E.shape
+
+        # for i in xrange(len(R)):
+        #     for j in xrange(len(R[i])):
+        #         if R[i][j] > 0:
+        #             eij = R[i][j] - numpy.dot(P[i,:],Q[:,j])
+        #             for k in xrange(K):
+        #                 P[i][k] = P[i][k] + alpha * (2 * eij * Q[k][j] - beta * P[i][k])
+        #                 Q[k][j] = Q[k][j] + alpha * (2 * eij * P[i][k] - beta * Q[k][j])
+
+        # Let's calculate the error for the current step
+        e = 0
+        e = e + pow(E, 2).sum() + (beta/2) * (pow(P,2).sum() + pow(Q,2).sum())
+
+        #eR = numpy.dot(P,Q)
+        # e = 0
+        # for i in xrange(len(R)):
+        #     for j in xrange(len(R[i])):
+        #         if R[i][j] > 0:
+        #             e = e + pow(R[i][j] - numpy.dot(P[i,:],Q[:,j]), 2)
+        #             for k in xrange(K):
+        #                 e = e + (beta/2) * (pow(P[i][k],2) + pow(Q[k][j],2))
+        if e < 0.001:
+            break
+
+        #print "e: {} e_vect: {}".format(e,e_vect)
+
+        #print " matrix_factorization_vectorised e: {}".format(e)
+    print "Min e: {}".format(e_vect)
+    return P, Q.T
+
+def matrix_factorization(R, P, Q, K, steps=50000, alpha=0.0002, beta=0.02):
+    Q = Q.T
+    
+    for step in xrange(steps):
+        #E = numpy.zeros((len(R),len(R[0])))
+        # print "Step: {} matrix_factorization".format(step)
+        for i in xrange(len(R)):
+            for j in xrange(len(R[i])):
+                if R[i][j] > 0:
+                    eij = R[i][j] - numpy.dot(P[i,:],Q[:,j])
+                    #E[i][j] = eij
+                    #print "i: {} j: {} e: {}".format(i,j,eij)
+                    for k in xrange(K):
+                        P[i][k] = P[i][k] + alpha * (2 * eij * Q[k][j] - beta * P[i][k])
+                        Q[k][j] = Q[k][j] + alpha * (2 * eij * P[i][k] - beta * Q[k][j])
+        # print "P matrix_factorization"
+        # print P
+        # print "Q matrix_factorization"
+        # print Q
+        # print E
+        eR = numpy.dot(P,Q)
+        e = 0
+        for i in xrange(len(R)):
+            for j in xrange(len(R[i])):
+                if R[i][j] > 0:
+                    e = e + pow(R[i][j] - numpy.dot(P[i,:],Q[:,j]), 2)
+                    for k in xrange(K):
+                        e = e + (beta/2) * (pow(P[i][k],2) + pow(Q[k][j],2))
+        if e < 0.001:
+            break
+        
+        #print " matrix_factorization e: {}".format(e)
+        #break
+    print "Min e: {}".format(e)
     return P, Q.T
 
 R = [
@@ -115,11 +198,13 @@ K = 2
 #     ),
 #     borrow=True
 # )
+startTime = datetime.now()
+P = numpy.random.rand(N,K)
+Q = numpy.random.rand(M,K)
 
-#print Q
+nP, nQ = matrix_factorization(R, P, Q, K)
+#nP, nQ = matrix_factorization_vectorised(R, P, Q, K)
+nR = numpy.dot(nP, nQ.T)
+print nR
 
-# P = numpy.random.rand(N,K)
-# Q = numpy.random.rand(M,K)
-
-# nP, nQ = matrix_factorization(R, P, Q, K)
-# nR = numpy.dot(nP, nQ.T)
+print datetime.now() - startTime

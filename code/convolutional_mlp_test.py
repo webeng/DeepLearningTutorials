@@ -169,25 +169,6 @@ def evaluate_lenet5(learning_rate=0.1, n_epochs=200,
     layer0_input = x.reshape((batch_size, 1, 256, 256))
 
     # Construct the first convolutional pooling layer:
-    # filtering reduces the image size to (28-5+1 , 28-5+1) = (24, 24)
-    # maxpooling reduces this further to (24/2, 24/2) = (12, 12)
-    # 4D output tensor is thus of shape (batch_size, nkerns[0], 12, 12)
-
-        # layer0 = LeNetConvPoolLayer(
-    #     rng,
-    #     input=layer0_input,
-    #     image_shape=(batch_size, 1, 28, 28),
-    #     filter_shape=(nkerns[0], 1, 5, 5),
-    #     poolsize=(2, 2)
-    # )
-
-    # Construct the second convolutional pooling layer
-    # filtering reduces the image size to (12-5+1, 12-5+1) = (8, 8)
-    # maxpooling reduces this further to (8/2, 8/2) = (4, 4)
-    # 4D output tensor is thus of shape (batch_size, nkerns[1], 4, 4)
-
-
-    # Construct the first convolutional pooling layer:
     # filtering reduces the image size to (256-5+1 , 256-5+1) = (252, 252)
     # maxpooling reduces this further to (252/2, 252/2) = (126, 126)
     # 4D output tensor is thus of shape (batch_size, nkerns[0], 126, 126)
@@ -213,7 +194,7 @@ def evaluate_lenet5(learning_rate=0.1, n_epochs=200,
         poolsize=(2, 2)
     )
 
-    # Construct the second convolutional pooling layer
+    # Construct the third convolutional pooling layer
     # filtering reduces the image size to (61-5+1, 61-5+1) = (57, 57)
     # maxpooling reduces this further to (56/2, 56/2) = (28, 28)
     # 4D output tensor is thus of shape (batch_size, nkerns[1], 28, 28)
@@ -241,14 +222,6 @@ def evaluate_lenet5(learning_rate=0.1, n_epochs=200,
         n_out=500,
         activation=T.tanh
     )
-
-    # layer2 = HiddenLayer(
-    #     rng,
-    #     input=layer2_input,
-    #     n_in=nkerns[1] * 4 * 4,
-    #     n_out=500,
-    #     activation=T.tanh
-    # )
 
     # classify the values of the fully-connected sigmoidal layer
     #layer3 = LogisticRegression(input=layer2.output, n_in=500, n_out=10)

@@ -114,10 +114,9 @@ class LeNetConvPoolLayer(object):
         self.input = input
 
 
-def evaluate_lenet5(learning_rate=0.1, n_epochs=100,
+def evaluate_lenet5(learning_rate=0.1, n_epochs=200,
                     dataset='mnist.pkl.gz',
-                    nkerns=[(96 / 2) , (256 / 2)], batch_size=100):
-
+                    nkerns=[20, 50], batch_size=500):
     """ Demonstrates lenet on MNIST dataset
 
     :type learning_rate: float
@@ -139,7 +138,6 @@ def evaluate_lenet5(learning_rate=0.1, n_epochs=100,
     datasets = load_data(dataset)
 
     train_set_x, train_set_y = datasets[0]
-    #print train_set_x
     valid_set_x, valid_set_y = datasets[1]
     test_set_x, test_set_y = datasets[2]
 
@@ -164,43 +162,36 @@ def evaluate_lenet5(learning_rate=0.1, n_epochs=100,
     ######################
     print '... building the model'
 
-    # :param filter_shape: (number of filters, num input feature maps,
-    #                          filter height, filter width)
-    
-    #:type image_shape: tuple or list of length 4
-    #    :param image_shape: (batch size, num input feature maps,
-    #                         image height, image width)
-
     # Reshape matrix of rasterized images of shape (batch_size, 28 * 28)
     # to a 4D tensor, compatible with our LeNetConvPoolLayer
     # (28, 28) is the size of MNIST images.
     #layer0_input = x.reshape((batch_size, 1, 28, 28))
-    #layer0_input = x.reshape((batch_size, 1, 256, 256))
-    layer0_input = x.reshape((batch_size, 3, 256, 256))
+    layer0_input = x.reshape((batch_size, 1, 256, 256))
 
     # Construct the first convolutional pooling layer:
-    # filtering reduces the image size to (256-11+1 , 256-11+1) = (246, 246)
-    # maxpooling reduces this further to (246/4, 246/4) = (61, 61)
-    # 4D output tensor is thus of shape (batch_size, nkerns[0], 61, 61)
+    # filtering reduces the image size to (256-5+1 , 256-5+1) = (252, 252)
+    # maxpooling reduces this further to (252/2, 252/2) = (126, 126)
+    # 4D output tensor is thus of shape (batch_size, nkerns[0], 126, 126)
 
     layer0 = LeNetConvPoolLayer(
         rng,
         input=layer0_input,
-        image_shape=(batch_size, 3, 256, 256),
-        filter_shape=(nkerns[0], 3, 11, 11),
-        poolsize=(4, 4)
+        image_shape=(batch_size, 1, 256, 256),
+        filter_shape=(nkerns[0], 1, 5, 5),
+        poolsize=(2, 2)
     )
 
     # Construct the second convolutional pooling layer
-    # filtering reduces the image size to (61-5+1, 61-5+1) = (57, 57)
-    # maxpooling reduces this further to (57/4, 57/4) = (14, 14)
-    # 4D output tensor is thus of shape (batch_size, nkerns[1], 14, 14)
+    # filtering reduces the image size to (126-5+1, 126-5+1) = (122, 122)
+    # maxpooling reduces this further to (122/2, 122/2) = (61, 61)
+    # 4D output tensor is thus of shape (batch_size, nkerns[1], 61, 61)
+
     layer1 = LeNetConvPoolLayer(
         rng,
         input=layer0.output,
-        image_shape=(batch_size, nkerns[0], 61, 61),
+        image_shape=(batch_size, nkerns[0], 126, 126),
         filter_shape=(nkerns[1], nkerns[0], 5, 5),
-        poolsize=(4, 4)
+        poolsize=(2, 2)
     )
 
     # Construct the third convolutional pooling layer
@@ -208,34 +199,34 @@ def evaluate_lenet5(learning_rate=0.1, n_epochs=100,
     # maxpooling reduces this further to (56/2, 56/2) = (28, 28)
     # 4D output tensor is thus of shape (batch_size, nkerns[1], 28, 28)
 
-    # layer2 = LeNetConvPoolLayer(
-    #     rng,
-    #     input=layer1.output,
-    #     image_shape=(batch_size, nkerns[1], 61, 61),
-    #     filter_shape=(nkerns[0], nkerns[1], 5, 5),
-    #     poolsize=(2, 2)
-    # )
+    layer2 = LeNetConvPoolLayer(
+        rng,
+        input=layer0.output,
+        image_shape=(batch_size, nkerns[0], 61, 61),
+        filter_shape=(nkerns[1], nkerns[0], 5, 5),
+        poolsize=(2, 2)
+    )
 
     # the HiddenLayer being fully-connected, it operates on 2D matrices of
     # shape (batch_size, num_pixels) (i.e matrix of rasterized images).
     # This will generate a matrix of shape (batch_size, nkerns[1] * 4 * 4),
     # or (500, 50 * 4 * 4) = (500, 800) with the default values.
-    layer2_input = layer1.output.flatten(2)
-    #layer3_input = layer2.output.flatten(2)
+    #layer2_input = layer1.output.flatten(2)
+    layer3_input = layer2.output.flatten(2)
 
     # construct a fully-connected sigmoidal layer
     layer3 = HiddenLayer(
         rng,
-        input=layer2_input,
-        n_in=nkerns[1] * 14 * 14,
-        n_out=100,
+        input=layer3_input,
+        n_in=nkerns[1] * 28 * 28,
+        n_out=500,
         activation=T.tanh
     )
 
     # classify the values of the fully-connected sigmoidal layer
     #layer3 = LogisticRegression(input=layer2.output, n_in=500, n_out=10)
     #layer3 = LogisticRegression(input=layer2.output, n_in=500, n_out=2)
-    layer4 = LogisticRegression(input=layer3.output, n_in=100, n_out=2)
+    layer4 = LogisticRegression(input=layer3.output, n_in=500, n_out=2)
 
     # the cost we minimize during training is the NLL of the model
     #cost = layer3.negative_log_likelihood(y)
@@ -262,8 +253,7 @@ def evaluate_lenet5(learning_rate=0.1, n_epochs=100,
 
     # create a list of all model parameters to be fit by gradient descent
     #params = layer4.params + layer3.params + layer2.params + layer1.params + layer0.params
-    #params = layer4.params + layer3.params + layer2.params + layer1.params + layer0.params
-    params = layer4.params + layer3.params + layer1.params + layer0.params
+    params = layer4.params + layer3.params + layer2.params + layer1.params + layer0.params
 
     # create a list of gradients for all model parameters
     grads = T.grad(cost, params)
@@ -318,7 +308,7 @@ def evaluate_lenet5(learning_rate=0.1, n_epochs=100,
         for minibatch_index in xrange(n_train_batches):
 
             iter = (epoch - 1) * n_train_batches + minibatch_index
-            print iter
+
             if iter % 100 == 0:
                 print 'training @ iter = ', iter
             cost_ij = train_model(minibatch_index)
@@ -356,10 +346,6 @@ def evaluate_lenet5(learning_rate=0.1, n_epochs=100,
                           (epoch, minibatch_index + 1, n_train_batches,
                            test_score * 100.))
 
-                    # save the best model
-                    # with open('best_model.pkl', 'w') as f:
-                    #     cPickle.dump(classifier, f)
-
             if patience <= iter:
                 done_looping = True
                 break
@@ -372,31 +358,6 @@ def evaluate_lenet5(learning_rate=0.1, n_epochs=100,
     print >> sys.stderr, ('The code for file ' +
                           os.path.split(__file__)[1] +
                           ' ran for %.2fm' % ((end_time - start_time) / 60.))
-
-    def predict():
-        """
-        An example of how to load a trained model and use it
-        to predict labels.
-        """
-    
-        # load the saved model
-        classifier = cPickle.load(open('best_model.pkl'))
-    
-        # compile a predictor function
-        predict_model = theano.function(
-            inputs=[classifier.input],
-            outputs=classifier.y_pred)
-    
-        # We can test it on some examples from test test
-        dataset='mnist.pkl.gz'
-        datasets = load_data(dataset)
-        test_set_x, test_set_y = datasets[2]
-        test_set_x = test_set_x.get_value()
-    
-        predicted_values = predict_model(test_set_x[:10])
-        print ("Predicted values for the first 10 examples in test set:")
-        print predicted_values
-
 if __name__ == '__main__':
     evaluate_lenet5()
 

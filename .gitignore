@@ -9,6 +9,9 @@ data/mnist_py3k.pkl.gz
 data/Nottingham.zip
 data/Nottingham
 data/cnn-furniture
+data/cnn-furniture-reduced
+data/cnn-furniture-reduced-2
+data/cnn-furniture-reduced-3
 data/midi.zip
 data/test_set.pkl
 data/train_set.pkl

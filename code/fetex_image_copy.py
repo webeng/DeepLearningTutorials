@@ -6,7 +6,6 @@ import numpy as np
 import random
 from sklearn import preprocessing
 import cPickle
-import theano
 #import scipy
 #from scipy.misc import pilutil
 
@@ -17,58 +16,13 @@ class FetexImage(object):
 		super(FetexImage, self).__init__()
 		self.verbose = verbose
 
-	def calculate_average_image(self,im_paths):
-		imlist = []
-		j = 0
-		for im_path in im_paths:
-
-			im = Image.open(im_path)
-			im_aux = self.scale_and_crop_img(im)
-			imlist.append(im_aux)
-
-			if self.verbose:
-				sys.stdout.write("\r Process: {0}/{1}".format(j, len(im_paths)))
-				sys.stdout.flush()
-
-			j += 1
-			# if j == 10:
-			# 	break
-		
-		w,h=imlist[0].size
-		N=len(imlist)
-		arr=np.zeros((h,w,3),theano.config.floatX)
-		
-		for im in imlist:
-			imarr=np.array(im,dtype=theano.config.floatX)
-			#print len(imarr)
-			try:
-				arr=arr+imarr/N
-			except Exception, e:
-				print e
-			
-
-		#arr=np.array(np.round(arr),dtype=np.uint8)
-		arr=np.array(np.round(arr),dtype=theano.config.floatX)
-		average_image=Image.fromarray(arr,mode="RGB")
-		#average_image.show()
-		
-		return imlist,average_image
-
-	def substract_average_image(self, im, average_image):
-
-		im_minus_avg = np.array(im, dtype=theano.config.floatX) - np.array(average_image, dtype=theano.config.floatX)
-		#arr=np.array(np.round(im_minus_avg),dtype=np.uint8)
-		arr=np.array(np.round(im_minus_avg),dtype=theano.config.floatX)
-		im_minus_avg=Image.fromarray(arr,mode="RGB")
-		
-		return im_minus_avg
-
-	def scale_and_crop_img(self,img):
+	def scale_and_crop_img(self,img,convert_to_L = True,average_image = None):
 		#img = Image.open(im_path)
 
 		# size = 256, 256
 		# img.thumbnail(size, Image.ANTIALIAS)
 		# img.save('/Applications/MAMP/htdocs/DeepLearningTutorials/data/cnn-furniture/n03131574-craddle/n03131574_16-res.JPEG', "JPEG")
+		
 		if img.size[0] < img.size[1]:
 			basewidth = 256
 			wpercent = (basewidth/float(img.size[0]))
@@ -93,6 +47,16 @@ class FetexImage(object):
         	half_the_height + 128
     	)
 		)
+
+		# Substract the average image from this image
+		if average_image != None:
+			im_minus_avg = np.array(img, dtype=np.float) - np.array(average_image, dtype=np.float)
+			arr=np.array(np.round(im_minus_avg),dtype=np.uint8)
+			im_minus_avg=Image.fromarray(arr,mode="RGB")
+			img = im_minus_avg
+
+		if convert_to_L:
+			img = img.convert('L')
 
 		return img
 
@@ -197,58 +161,77 @@ class FetexImage(object):
 
 		im_paths[:], im_labels[:] = zip(*combined)
 
-		print "load, scale, crop and calculate image average"
-		imlist,average_image = self.calculate_average_image(im_paths)
+		print "calculating image average"
+		imlist = []
+		j = 0
+		for im_path in im_paths:
+
+			im = Image.open(im_path)
+			im_aux = self.scale_and_crop_img(im,False,None)
+			imlist.append(im_aux)
+
+			if self.verbose:
+				sys.stdout.write("\r Process: {0}/{1}".format(j, len(im_paths)))
+				sys.stdout.flush()
+
+			j += 1
+			# if j == 10:
+			# 	break
 		
-		i = 0
-		#for im_path in im_paths:
+		w,h=imlist[0].size
+		N=len(imlist)
+		arr=np.zeros((h,w,3),np.float)
+		
 		for im in imlist:
-			# Substract average image and convert it to BW
-			# Then convert it to monochrome and append it to X
-			# Append the label to Y
+			imarr=np.array(im,dtype=np.float)
+			#print len(imarr)
 			try:
-				im = self.substract_average_image(im, average_image)
-
-				X.append(np.array(im, dtype=theano.config.floatX))
-				
-				#imarr = np.array(im, dtype=theano.config.floatX)
-				#imarr = imarr.flatten(order='F')
-				#imarr = imarr.flatten(order='C')
-				#print imarr
-				#X.append(imarr)
-				#im_aux = np.asarray(im, dtype='float64') / 256.
-				# put image in 4D tensor of shape (1, 3, height, width)
-				#img_ = im_aux.transpose(2, 0, 1).reshape(1, 3, im.size[0], im.size[1])
-				#print img_
-				#X.append(img_)
-
-				#im.transpose(2, 0, 1).reshape(1, 3, 639, 516)
-				#print np.array(im, dtype=theano.config.floatX)
-				#print "reshape"
-				#im = im.reshape(1, 3, im.size[0], im.size[1])
-
-				#print np.array(im, dtype=theano.config.floatX)
-				
-
-
-				#X.append(np.array(im, dtype='float64'))
-				#X.append(np.array(np.round(im), dtype=np.uint8))
-
-				#Uncomment this if you want to work with monochrome
-				# im = im.convert('L')
-				# pixels_monochrome = np.array(list(im.getdata()), dtype=np.float)
-							
-				# # scale between 0-1 to speed up computations
-				# min_max_scaler = preprocessing.MinMaxScaler(feature_range=(0,1), copy=True)
-				# pixels_monochrome = min_max_scaler.fit_transform(pixels_monochrome)
-
-				# X.append(pixels_monochrome)
-
-
-				Y.append(lb.transform([im_labels[i]])[0][0])
+				arr=arr+imarr/N
 			except Exception, e:
 				print e
 			
+
+		arr=np.array(np.round(arr),dtype=np.uint8)
+		average_image=Image.fromarray(arr,mode="RGB")
+		average_image.show()
+		
+
+		# aux = np.array(imlist[0], dtype=np.float) - np.array(out, dtype=np.float)
+		# arr=np.array(np.round(aux),dtype=np.uint8)
+		# out=Image.fromarray(arr,mode="RGB")
+		# out.show()
+
+		#print R
+		#return None
+#		shuffle(im_paths)
+
+		i = 0
+		#train_set,validation_set,test_set = [],[],[]
+		#for im_path in im_paths:
+		for im in imlist:
+			#Get average color so if the aspect ratio is greater or smaller that 1 we fill the blank with the average color
+			#avg_color = self.average_image_color(im_path)
+			
+			#Add background color (if needed) and resize
+			im = Image.open(im_path)
+			#square_one = self.add_bg_square(im,avg_color[0],avg_color[1],avg_color[2])
+			#Add white background
+			#square_one = self.add_bg_square(im,0,0,0) OLD
+			#square_one.resize((256, 256), Image.ANTIALIAS).save(outfile) # uncomment this if you want to save the image
+			
+			#Resize and convert to BW
+			#im_aux = square_one.resize((256, 256), Image.ANTIALIAS).convert('L') OLD
+			im_aux = self.scale_and_crop_img(im,True,average_image)
+			#im_aux.show()
+			pixels_monochrome = np.array(list(im_aux.getdata()), dtype='float32')
+		
+			# scale between 0-1 to speed up computations
+			# print type(pixels_monochrome)
+			min_max_scaler = preprocessing.MinMaxScaler(feature_range=(0,1), copy=True)
+			pixels_monochrome = min_max_scaler.fit_transform(pixels_monochrome)
+			# print len(pixels_monochrome)
+			X.append(pixels_monochrome)
+			Y.append(lb.transform([im_labels[i]])[0][0])
 			# print Y
 			# print len(Y)
 			#im_aux.show()
@@ -259,10 +242,10 @@ class FetexImage(object):
 				sys.stdout.write("\r Process: {0}/{1}".format(i, len(im_paths)))
 				sys.stdout.flush()
 
-			# if i == 0:
-			# 	break
-
 			i += 1
+
+			# if i == 5:
+			# 	break
 
 		train_length = int(round(len(X) * 0.60))
 		valid_length = int(round(len(X) * 0.20))
@@ -272,28 +255,9 @@ class FetexImage(object):
 		X_valid = X[train_length: (train_length + valid_length)]
 		X_test = X[-test_length:]
 
-		def flaten_aux(V):
-			#return V.flatten(order='C')
-			return V.flatten(order='F')
-		#vfunc = np.vectorize(flaten_aux)
-
-		X_train = map(flaten_aux, X_train)
-		X_valid = map(flaten_aux, X_valid)
-		X_test = map(flaten_aux, X_test)
-		#print X_train
-		#print X_train.size
-		#X_train = vfunc(X_train)
-		# X_valid = vfunc(X_train)X_valid_flat.flatten(order='F')
-		# X_test = X_test_flat.flatten(order='F')
-
-
-		#X_train = X_train.flatten(order='F')
-		#X_valid = X_valid.flatten(order='F')
-		#X_test = X_test.flatten(order='F')
-
-		Y_train = np.array(Y[0:train_length], dtype=theano.config.floatX)
-		Y_valid = np.array(Y[train_length:(train_length + valid_length)], dtype=theano.config.floatX)
-		Y_test = np.array(Y[-test_length:], dtype=theano.config.floatX)
+		Y_train = np.array(Y[0:train_length], dtype='float32')
+		Y_valid = np.array(Y[train_length:(train_length + valid_length)], dtype='float32')
+		Y_test = np.array(Y[-test_length:], dtype='float32')
 
 		train_set = [X_train,Y_train]
 		valid_set = [X_valid,Y_valid]
@@ -319,8 +283,8 @@ class FetexImage(object):
 
 if __name__ == '__main__':
 	
-	folder = '/Applications/MAMP/htdocs/DeepLearningTutorials/data/cnn-furniture-reduced-2/'
-	#folder = '/Applications/MAMP/htdocs/DeepLearningTutorials/data/cnn-furniture/'
+	#folder = '/Applications/MAMP/htdocs/DeepLearningTutorials/data/cnn-furniture-reduced-2/'
+	folder = '/Applications/MAMP/htdocs/DeepLearningTutorials/data/cnn-furniture/'
 	fe = FetexImage(verbose=True)
 	#fe.scale_and_crop_test('/Applications/MAMP/htdocs/DeepLearningTutorials/data/cnn-furniture/n03131574-craddle/n03131574_16.JPEG')
 	#print fe.convert_to_bw_and_scale()

@@ -16,6 +16,8 @@ data/midi.zip
 data/test_set.pkl
 data/train_set.pkl
 data/valid_set.pkl
+data
+venv
 html
 *.pyc
 *~

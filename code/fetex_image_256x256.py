@@ -12,8 +12,6 @@ import theano
 
 class FetexImage(object):
 	verbose = None
-	width = 128
-	height = 128
 	"""docstring for FetexImage"""
 	def __init__(self,verbose = False):
 		super(FetexImage, self).__init__()
@@ -72,14 +70,14 @@ class FetexImage(object):
 		# img.thumbnail(size, Image.ANTIALIAS)
 		# img.save('/Applications/MAMP/htdocs/DeepLearningTutorials/data/cnn-furniture/n03131574-craddle/n03131574_16-res.JPEG', "JPEG")
 		if img.size[0] < img.size[1]:
-			basewidth = self.width
+			basewidth = 256
 			wpercent = (basewidth/float(img.size[0]))
 			hsize = int((float(img.size[1])*float(wpercent)))
 			#img = img.resize((basewidth,hsize), Image.ANTIALIAS).convert('L')
 			img = img.resize((basewidth,hsize), Image.ANTIALIAS)
 
 		else:
-			baseheight = self.height
+			baseheight = 256
 			hpercent = (baseheight/float(img.size[1]))
 			wsize = int((float(img.size[0])*float(hpercent)))
 			#img = img.resize((wsize,baseheight), Image.ANTIALIAS).convert('L')
@@ -89,10 +87,10 @@ class FetexImage(object):
 		half_the_height = img.size[1] / 2
 		img = img.crop(
     	(
-	        half_the_width - (self.width / 2),
-        	half_the_height - (self.height / 2),
-        	half_the_width + (self.width / 2),
-        	half_the_height + (self.height / 2)
+	        half_the_width - 128,
+        	half_the_height - 128,
+        	half_the_width + 128,
+        	half_the_height + 128
     	)
 		)
 
@@ -122,7 +120,6 @@ class FetexImage(object):
 			sum( i*w for i, w in enumerate(g) ) / sum(g),
 			sum( i*w for i, w in enumerate(b) ) / sum(b)
 		)
-	
 	def convert_to_bw_and_scale(self):
 		im_path = '/Applications/MAMP/htdocs/DeepLearningTutorials/data/cnn-furniture/n03131574-craddle-resized/n03131574_10027.JPEG'
 		im = Image.open(im_path)
@@ -271,23 +268,18 @@ class FetexImage(object):
 		valid_length = int(round(len(X) * 0.20))
 		test_length = int(round(len(X) * 0.20))
 
-		def flaten_aux(V):
-			return V.flatten(order='F')
-
-		X = map(flaten_aux, X)
-
 		X_train = X[0:train_length]
 		X_valid = X[train_length: (train_length + valid_length)]
 		X_test = X[-test_length:]
 
-		# def flaten_aux(V):
-		# 	#return V.flatten(order='C')
-		# 	return V.flatten(order='F')
-		# #vfunc = np.vectorize(flaten_aux)
+		def flaten_aux(V):
+			#return V.flatten(order='C')
+			return V.flatten(order='F')
+		#vfunc = np.vectorize(flaten_aux)
 
-		# X_train = map(flaten_aux, X_train)
-		# X_valid = map(flaten_aux, X_valid)
-		# X_test = map(flaten_aux, X_test)
+		X_train = map(flaten_aux, X_train)
+		X_valid = map(flaten_aux, X_valid)
+		X_test = map(flaten_aux, X_test)
 		#print X_train
 		#print X_train.size
 		#X_train = vfunc(X_train)

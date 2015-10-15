@@ -123,7 +123,7 @@ def theano_matrix_factorization(steps=20000, alpha=0.0002, beta=0.02):
 			name="train")
 
 	#print train(np.asarray(gamma,dtype=theano.config.floatX),np.asarray(l,dtype=theano.config.floatX));
-
+	last_e = np.inf
 	for step in xrange(steps):
 		E = train(numpy.asarray(alpha,dtype=theano.config.floatX),numpy.asarray(beta,dtype=theano.config.floatX))
 		
@@ -131,14 +131,21 @@ def theano_matrix_factorization(steps=20000, alpha=0.0002, beta=0.02):
 		if (step % 100) == 0:
 			e = 0
 			e = pow(E, 2).sum() + (beta/2) * (pow(P.get_value(),2).sum() + pow(Q.get_value(),2).sum())
-			print "step: {} e: {}".format(step,e)
+
+			improvement = last_e - e
+			print "step: {} e: {} improvement:{} ".format(step,e,improvement)
+			if improvement < 2:
+				break
+				
+			last_e = e
+			if e < 0.001:
+				break
 		
 		#e = e + T.sum(T.pow(E, 2)) + (beta/2) * (T.sum(T.pow(P,2)) + T.sum(T.pow(Q,2)))
 		#e = T.sum(T.pow(E, 2)) + (beta/2) * (T.sum(T.pow(P,2)) + T.sum(T.pow(Q,2)))
 		#print "step: {}".format(step)
 
-		# if e < 0.001:
-		# 	break
+		
 	print "Min e: {}".format(e)
 	return P.get_value(), Q.get_value().T
 
@@ -147,7 +154,7 @@ def matrix_factorization_vectorised(R, P, Q, K, steps=50000, alpha=0.0002, beta=
 
 	A = R.copy()
 	A[ A > 0 ] = 1
-
+	last_e = np.inf
 	for step in xrange(steps):
 		#print "Step: {} matrix_factorization_vectorised".format(step)
 		# Calculate the current cost. We need an auxiliar matrix to not take into account the values of R that are z. We basically need it for the step if R[i][j] > 0: in the original algo
@@ -175,7 +182,15 @@ def matrix_factorization_vectorised(R, P, Q, K, steps=50000, alpha=0.0002, beta=
 		if (step % 100) == 0:
 			e = 0
 			e = e + pow(E, 2).sum() + (beta/2) * (pow(P,2).sum() + pow(Q,2).sum())
-			print "step: {} e: {}".format(step,e)
+
+			improvement = last_e - e
+			print "step: {} e: {} improvement:{} ".format(step,e,improvement)
+			if improvement < 2:
+				break
+
+			last_e = e
+			if e < 0.001:
+				break
 
 		# e = 0
 		# e = e + pow(E, 2).sum() + (beta/2) * (pow(P,2).sum() + pow(Q,2).sum())
@@ -188,8 +203,7 @@ def matrix_factorization_vectorised(R, P, Q, K, steps=50000, alpha=0.0002, beta=
 		#             e = e + pow(R[i][j] - numpy.dot(P[i,:],Q[:,j]), 2)
 		#             for k in xrange(K):
 		#                 e = e + (beta/2) * (pow(P[i][k],2) + pow(Q[k][j],2))
-		if e < 0.001:
-			break
+		
 
 		#print "e: {}".format(e)
 

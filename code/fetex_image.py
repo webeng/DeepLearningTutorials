@@ -1,4 +1,5 @@
 from PIL import Image
+import os
 from os import listdir
 from os.path import isfile, join
 import sys
@@ -7,15 +8,19 @@ import random
 from sklearn import preprocessing
 import cPickle
 import theano
+import csv
+import urllib
 #import scipy
 #from scipy.misc import pilutil
 
 class FetexImage(object):
 	verbose = None
+	path = None
 	"""docstring for FetexImage"""
-	def __init__(self,verbose = False):
+	def __init__(self,verbose = False, path = None):
 		super(FetexImage, self).__init__()
 		self.verbose = verbose
+		self.path = path
 
 	def calculate_average_image(self,im_paths):
 		imlist = []
@@ -170,6 +175,52 @@ class FetexImage(object):
 		# print len(all_pixels)
 		# all_pixels.show()
 
+	def createFolderStructure(self):
+
+		""" query to get the number of images per category
+		SELECT categories.id,categories.slug, categories.order
+FROM categories
+WHERE categories.order = 10
+
+		SELECT COUNT(*) as total, products.type, categories.`name`
+FROM documents 
+JOIN products ON documents.`product_id` = products.id
+JOIN `categories` ON categories.id = products.`category_id`
+WHERE documents.type = 'photo'
+AND products.`category_id` IS NOT NULL
+GROUP BY products.`category_id`
+ORDER BY total DESC
+		"""
+
+		with open(self.path + 'data/categories.csv', 'rb') as csvfile:
+			reader = csv.reader(csvfile, delimiter=',', quotechar='"')
+			next(reader, None)  # skip the headers
+			for row in reader:
+				directory = self.path + 'data/categories/' + str(row[1])
+				if not os.path.exists(directory):
+					os.makedirs(directory)
+	def downloadImages(self):
+
+		""" query to get all the images and slug
+		SELECT documents.`name`, documents.`url`, categories.`slug`
+FROM documents 
+JOIN products ON documents.`product_id` = products.id
+JOIN `categories` ON categories.id = products.`category_id`
+WHERE documents.type = 'photo'
+AND products.`category_id` IS NOT NULL
+		"""
+		with open(self.path + 'data/images.csv', 'rb') as csvfile:
+			reader = csv.reader(csvfile, delimiter=',', quotechar='"')
+			next(reader, None)  # skip the headers
+			i = 0
+			for row in reader:
+				print "i:{} url:{}".format(i,row[1])
+				
+				file_path = self.path + "data/categories/" + row[2] + '/' + row[0]
+				if not os.path.exists(file_path):
+					urllib.urlretrieve(row[1], file_path )
+
+				i += 1
 
 	def processImagesPipeline(self,folder):
 
@@ -319,10 +370,14 @@ class FetexImage(object):
 
 if __name__ == '__main__':
 	
-	folder = '/Applications/MAMP/htdocs/DeepLearningTutorials/data/cnn-furniture-reduced-2/'
+	#folder = '/Applications/MAMP/htdocs/DeepLearningTutorials/data/cnn-furniture-reduced-2/'
 	#folder = '/Applications/MAMP/htdocs/DeepLearningTutorials/data/cnn-furniture/'
-	fe = FetexImage(verbose=True)
+	fe = FetexImage(verbose=True, path = '/Applications/MAMP/htdocs/DeepLearningTutorials/')
 	#fe.scale_and_crop_test('/Applications/MAMP/htdocs/DeepLearningTutorials/data/cnn-furniture/n03131574-craddle/n03131574_16.JPEG')
 	#print fe.convert_to_bw_and_scale()
-	train_set,valid_set,test_set = fe.processImagesPipeline(folder)
+	#train_set,valid_set,test_set = fe.processImagesPipeline(folder)
+	#fe.createFolderStructure()
+	#fe.downloadImages()
+
+
 

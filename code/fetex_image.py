@@ -214,7 +214,7 @@ class FetexImage(object):
 		# all_pixels.show()
 
 
-	def processImagesPipeline(self,folder):
+	def processImagesPipeline(self,folder,support_per_class = None):
 
 		X = []
 		Y = []
@@ -230,15 +230,21 @@ class FetexImage(object):
 		im_paths = []
 		im_labels = []
 		#for image_type in ['n03131574-craddle','n04222210-single-bed']:
+		
 		for image_type in classes:
+
 			mypath = folder + image_type
 			onlyfiles = [ f for f in listdir(mypath) if isfile(join(mypath,f)) ]
+			class_support = 0
 			for file_name in onlyfiles:
 				if file_name != '.DS_Store':
 					im_path = mypath = folder + image_type + '/' + file_name
 					#outfile = folder + image_type + '-resized/' + file_name
 					im_paths.append(im_path)
 					im_labels.append(image_type)
+				class_support += 1
+				if support_per_class != None and class_support ==  support_per_class:
+					break
 
 		combined = zip(im_paths, im_labels)
 		random.shuffle(combined)
@@ -249,6 +255,7 @@ class FetexImage(object):
 		print "load, scale, crop and calculate image average"
 		imlist,average_image = self.calculate_average_image(im_paths)
 		#average_image.show()
+		return imlist
 
 		i = 0
 		#for im_path in im_paths:
@@ -276,18 +283,6 @@ class FetexImage(object):
 
 				#Filters
 				#im_f = im_ini.filter(ImageFilter.DETAIL)
-				# im_f_2 = im_ini.filter(ImageFilter.EDGE_ENHANCE)
-				# im_f_3 = im_ini.filter(ImageFilter.SMOOTH)
-
-				# im_f_test = im_ini.filter(ImageFilter.CONTOUR)
-				# im_f_test.show()
-
-				# im_f_test = im_ini.filter(ImageFilter.EMBOSS)
-				# im_f_test.show()
-
-				#im_f_test = im_ini.filter(ImageFilter.EMBOSS)
-				#im_f_test.show()
-				# im_f_3 = im_ini.filter(ImageFilter.EDGE_ENHANCE_MORE)
 				
 				
 				
@@ -296,8 +291,6 @@ class FetexImage(object):
 				# im_r_2 = np.asarray(im_r_2, dtype=theano.config.floatX) / 256.
 				# im_r_3 = np.asarray(im_r_3, dtype=theano.config.floatX) / 256.
 				#im_f = np.asarray(im_f, dtype=theano.config.floatX) / 256.
-				# im_f_2 = np.asarray(im_f_2, dtype=theano.config.floatX) / 256.
-				# im_f_3 = np.asarray(im_f_3, dtype=theano.config.floatX) / 256.
 				
 				#im = im.transpose(2, 0, 1)
 				#X.append(np.array(im, dtype=theano.config.floatX))
@@ -474,6 +467,6 @@ if __name__ == '__main__':
 	fe = FetexImage(verbose=True)
 	#fe.scale_and_crop_test('/Applications/MAMP/htdocs/DeepLearningTutorials/data/cnn-furniture/n03131574-craddle/n03131574_16.JPEG')
 	#print fe.convert_to_bw_and_scale()
-	train_set,valid_set,test_set = fe.processImagesPipeline(folder)
+	train_set,valid_set,test_set = fe.processImagesPipeline(folder,support_per_class=10)
 	#fe.createFolderStructure()
 

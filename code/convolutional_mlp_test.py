@@ -114,9 +114,12 @@ class LeNetConvPoolLayer(object):
         self.input = input
 
 
+# def evaluate_lenet5(learning_rate=0.1, n_epochs=100,
+#                     dataset='mnist.pkl.gz',
+#                     nkerns=[(96) , (256)], batch_size=300):
 def evaluate_lenet5(learning_rate=0.1, n_epochs=100,
                     dataset='mnist.pkl.gz',
-                    nkerns=[(96 / 4) , (256 / 4)], batch_size=500):
+                    nkerns=[(25 / 1) , (25 / 1)], batch_size=4):
 
     """ Demonstrates lenet on MNIST dataset
 
@@ -142,6 +145,8 @@ def evaluate_lenet5(learning_rate=0.1, n_epochs=100,
     #print train_set_x
     valid_set_x, valid_set_y = datasets[1]
     test_set_x, test_set_y = datasets[2]
+    #index = 0
+    #print test_set_x[index * batch_size: (index + 1) * batch_size]
 
     # compute number of minibatches for training, validation and testing
     n_train_batches = train_set_x.get_value(borrow=True).shape[0]
@@ -156,8 +161,10 @@ def evaluate_lenet5(learning_rate=0.1, n_epochs=100,
 
     # start-snippet-1
     x = T.matrix('x')   # the data is presented as rasterized images
+    #y = T.lvector('y')  # the labels are presented as 1D vector of
     y = T.ivector('y')  # the labels are presented as 1D vector of
                         # [int] labels
+
 
     ######################
     # BUILD ACTUAL MODEL #
@@ -177,45 +184,33 @@ def evaluate_lenet5(learning_rate=0.1, n_epochs=100,
     #layer0_input = x.reshape((batch_size, 1, 28, 28))
     #layer0_input = x.reshape((batch_size, 1, 256, 256))
     #layer0_input = x.reshape((batch_size, 3, 256, 256))
-    layer0_input = x.reshape((batch_size, 3, 128, 128))
+    layer0_input = x.reshape((batch_size, 3, 64, 64))
+    #layer0_input = x
 
     # Construct the first convolutional pooling layer:
-    # filtering reduces the image size to (128-11+1 , 128-11+1) = (118, 118)
-    # maxpooling reduces this further to (128/4, 128/4) = (29, 29)
-    # 4D output tensor is thus of shape (batch_size, nkerns[0], 29, 29)
+    # filtering reduces the image size to (64-5+1 , 64-5+1) = (60, 60)
+    # maxpooling reduces this further to (60/2, 60/2) = (30, 30)
+    # 4D output tensor is thus of shape (batch_size, nkerns[0], 30, 30)
 
     layer0 = LeNetConvPoolLayer(
         rng,
         input=layer0_input,
-        image_shape=(batch_size, 3, 128, 128),
-        filter_shape=(nkerns[0], 3, 11, 11),
-        poolsize=(4, 4)
-    )
-
-    # Construct the second convolutional pooling layer
-    # filtering reduces the image size to (29-5+1, 29-5+1) = (25, 25)
-    # maxpooling reduces this further to (25/2, 25/2) = (12, 12)
-    # 4D output tensor is thus of shape (batch_size, nkerns[1], 12, 12)
-    layer1 = LeNetConvPoolLayer(
-        rng,
-        input=layer0.output,
-        image_shape=(batch_size, nkerns[0], 29, 29),
-        filter_shape=(nkerns[1], nkerns[0], 5, 5),
+        image_shape=(batch_size, 3, 64, 64),
+        filter_shape=(nkerns[0], 3, 5, 5),
         poolsize=(2, 2)
     )
 
-    # Construct the third convolutional pooling layer
-    # filtering reduces the image size to (61-5+1, 61-5+1) = (57, 57)
-    # maxpooling reduces this further to (56/2, 56/2) = (28, 28)
-    # 4D output tensor is thus of shape (batch_size, nkerns[1], 28, 28)
-
-    # layer2 = LeNetConvPoolLayer(
-    #     rng,
-    #     input=layer1.output,
-    #     image_shape=(batch_size, nkerns[1], 61, 61),
-    #     filter_shape=(nkerns[0], nkerns[1], 5, 5),
-    #     poolsize=(2, 2)
-    # )
+    # Construct the second convolutional pooling layer
+    # filtering reduces the image size to (30-5+1, 30-5+1) = (26, 26)
+    # maxpooling reduces this further to (26/2, 26/2) = (18, 18)
+    # 4D output tensor is thus of shape (batch_size, nkerns[1], 13, 13)
+    layer1 = LeNetConvPoolLayer(
+        rng,
+        input=layer0.output,
+        image_shape=(batch_size, nkerns[0], 30, 30),
+        filter_shape=(nkerns[1], nkerns[0], 5, 5),
+        poolsize=(2, 2)
+    )
 
     # the HiddenLayer being fully-connected, it operates on 2D matrices of
     # shape (batch_size, num_pixels) (i.e matrix of rasterized images).
@@ -228,15 +223,15 @@ def evaluate_lenet5(learning_rate=0.1, n_epochs=100,
     layer3 = HiddenLayer(
         rng,
         input=layer2_input,
-        n_in=nkerns[1] * 12 * 12,
-        n_out=500,
+        n_in=nkerns[1] * 13 * 13,
+        n_out=2,
         activation=T.tanh
     )
 
     # classify the values of the fully-connected sigmoidal layer
     #layer3 = LogisticRegression(input=layer2.output, n_in=500, n_out=10)
     #layer3 = LogisticRegression(input=layer2.output, n_in=500, n_out=2)
-    layer4 = LogisticRegression(input=layer3.output, n_in=500, n_out=2)
+    layer4 = LogisticRegression(input=layer3.output, n_in=2, n_out=2)
 
     # the cost we minimize during training is the NLL of the model
     #cost = layer3.negative_log_likelihood(y)

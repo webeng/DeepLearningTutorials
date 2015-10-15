@@ -210,19 +210,20 @@ def load_data(dataset):
     # train_set, valid_set, test_set = cPickle.load(f)
     # f.close()
 
-    # folder = '/Applications/MAMP/htdocs/DeepLearningTutorials/data/cnn-furniture/'
+    #folder = '/Applications/MAMP/htdocs/DeepLearningTutorials/data/cnn-furniture/'
     folder = '/Applications/MAMP/htdocs/DeepLearningTutorials/data/cnn-furniture-reduced-3/'
+    #folder = '/Applications/MAMP/htdocs/DeepLearningTutorials/data/cnn-furniture-reduced/'
     fe = FetexImage(verbose=True)
     train_set,valid_set,test_set = fe.processImagesPipeline(folder)
 
-    # pkl_file = open( '../data/train_set.pkl', 'rb')
-    # train_set = cPickle.load(pkl_file)
+    pkl_file = open( '../data/train_set.pkl', 'rb')
+    train_set = cPickle.load(pkl_file)
 
-    # pkl_file = open( '../data/valid_set.pkl', 'rb')
-    # valid_set = cPickle.load(pkl_file)
+    pkl_file = open( '../data/valid_set.pkl', 'rb')
+    valid_set = cPickle.load(pkl_file)
 
-    # pkl_file = open( '../data/test_set.pkl', 'rb')
-    # test_set = cPickle.load(pkl_file)
+    pkl_file = open( '../data/test_set.pkl', 'rb')
+    test_set = cPickle.load(pkl_file)
     
     #train_set, valid_set, test_set format: tuple(input, target)
     #input is an numpy.ndarray of 2 dimensions (a matrix)
@@ -241,6 +242,9 @@ def load_data(dataset):
         variable) would lead to a large decrease in performance.
         """
         data_x, data_y = data_xy
+        # print data_y
+        # print type(data_y)
+        # print type(data_y[0])
         shared_x = theano.shared(numpy.asarray(data_x,
                                                dtype=theano.config.floatX),
                                  borrow=borrow)

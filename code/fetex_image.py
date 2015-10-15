@@ -1,5 +1,4 @@
 from PIL import Image
-import os
 from os import listdir
 from os.path import isfile, join
 import sys
@@ -8,41 +7,70 @@ import random
 from sklearn import preprocessing
 import cPickle
 import theano
-import csv
-import urllib
+from PIL import ImageFilter
+import os
 #import scipy
+
 #from scipy.misc import pilutil
 
 class FetexImage(object):
 	verbose = None
-	path = None
+	# width = 128
+	# height = 128
+	width = 64
+	height = 64
+
+	# width = 90
+	# height = 90
 	"""docstring for FetexImage"""
-	def __init__(self,verbose = False, path = None):
+	def __init__(self,verbose = False):
 		super(FetexImage, self).__init__()
 		self.verbose = verbose
-		self.path = path
 
 	def calculate_average_image(self,im_paths):
 		imlist = []
 		j = 0
 		for im_path in im_paths:
-
-			im = Image.open(im_path)
-			im_aux = self.scale_and_crop_img(im)
-			imlist.append(im_aux)
-
+			im = None
+			
+			try:
+				im = Image.open(im_path)
+			except Exception, e:
+				print e
+			
+			if im != None:
+				im_aux = np.array(im,dtype=theano.config.floatX)
+				
+				try:
+					if im_aux.shape[2] == 4:
+						background = Image.new("RGB", im.size, (255, 255, 255))
+						background.paste(im, mask=im.split()[3]) # 3 is the alpha channel
+						im_aux = np.array(background,dtype=theano.config.floatX)
+				except Exception, e:
+					print e
+				
+				try:
+					if im_aux.shape[2] == 3:
+						im_aux = self.scale_and_crop_img(im)
+						imlist.append(im_aux)
+					else:
+						print "invalid image: {} size:{}".format(im.filename, im_aux.shape)
+	
+				except Exception, e:
+					print e
+	
 			if self.verbose:
 				sys.stdout.write("\r Process: {0}/{1}".format(j, len(im_paths)))
 				sys.stdout.flush()
 
 			j += 1
-			# if j == 10:
+			# if j == 30:
 			# 	break
 		
 		w,h=imlist[0].size
 		N=len(imlist)
 		arr=np.zeros((h,w,3),theano.config.floatX)
-		
+		#image_index = 0
 		for im in imlist:
 			imarr=np.array(im,dtype=theano.config.floatX)
 			#print len(imarr)
@@ -50,21 +78,30 @@ class FetexImage(object):
 				arr=arr+imarr/N
 			except Exception, e:
 				print e
+				#print image_index
+				#print im.filename
+			#image_index += 1
 			
 
-		#arr=np.array(np.round(arr),dtype=np.uint8)
-		arr=np.array(np.round(arr),dtype=theano.config.floatX)
+		arr=np.array(np.round(arr),dtype=np.uint8)
+		#arr=np.array(np.round(arr),dtype=theano.config.floatX)
 		average_image=Image.fromarray(arr,mode="RGB")
 		#average_image.show()
 		
 		return imlist,average_image
 
 	def substract_average_image(self, im, average_image):
-
-		im_minus_avg = np.array(im, dtype=theano.config.floatX) - np.array(average_image, dtype=theano.config.floatX)
+		#arr=np.array(np.round(arr),dtype=np.uint8)
+		im_minus_avg = np.array(np.round(im),dtype=np.uint8) - np.array(np.round(average_image),dtype=np.uint8)
+		#im_minus_avg = np.array(np.round(im),dtype='int64') - np.array(np.round(average_image),dtype='int64')
+		#im_minus_avg[im_minus_avg < 0] = 0
+		#im_minus_avg = abs(im_minus_avg)
+		#print im_minus_avg
+		#im_minus_avg = np.array(im, dtype=theano.config.floatX) - np.array(average_image, dtype=theano.config.floatX)
 		#arr=np.array(np.round(im_minus_avg),dtype=np.uint8)
-		arr=np.array(np.round(im_minus_avg),dtype=theano.config.floatX)
-		im_minus_avg=Image.fromarray(arr,mode="RGB")
+		#arr=np.array(np.round(im_minus_avg),dtype=theano.config.floatX)
+		#im_minus_avg=np.array(np.round(im_minus_avg),dtype=theano.config.floatX)
+		im_minus_avg=Image.fromarray(im_minus_avg,mode="RGB")
 		
 		return im_minus_avg
 
@@ -75,14 +112,14 @@ class FetexImage(object):
 		# img.thumbnail(size, Image.ANTIALIAS)
 		# img.save('/Applications/MAMP/htdocs/DeepLearningTutorials/data/cnn-furniture/n03131574-craddle/n03131574_16-res.JPEG', "JPEG")
 		if img.size[0] < img.size[1]:
-			basewidth = 256
+			basewidth = self.width
 			wpercent = (basewidth/float(img.size[0]))
 			hsize = int((float(img.size[1])*float(wpercent)))
 			#img = img.resize((basewidth,hsize), Image.ANTIALIAS).convert('L')
 			img = img.resize((basewidth,hsize), Image.ANTIALIAS)
 
 		else:
-			baseheight = 256
+			baseheight = self.height
 			hpercent = (baseheight/float(img.size[1]))
 			wsize = int((float(img.size[0])*float(hpercent)))
 			#img = img.resize((wsize,baseheight), Image.ANTIALIAS).convert('L')
@@ -92,10 +129,10 @@ class FetexImage(object):
 		half_the_height = img.size[1] / 2
 		img = img.crop(
     	(
-	        half_the_width - 128,
-        	half_the_height - 128,
-        	half_the_width + 128,
-        	half_the_height + 128
+	        half_the_width - (self.width / 2),
+        	half_the_height - (self.height / 2),
+        	half_the_width + (self.width / 2),
+        	half_the_height + (self.height / 2)
     	)
 		)
 
@@ -125,6 +162,7 @@ class FetexImage(object):
 			sum( i*w for i, w in enumerate(g) ) / sum(g),
 			sum( i*w for i, w in enumerate(b) ) / sum(b)
 		)
+	
 	def convert_to_bw_and_scale(self):
 		im_path = '/Applications/MAMP/htdocs/DeepLearningTutorials/data/cnn-furniture/n03131574-craddle-resized/n03131574_10027.JPEG'
 		im = Image.open(im_path)
@@ -175,6 +213,212 @@ class FetexImage(object):
 		# print len(all_pixels)
 		# all_pixels.show()
 
+
+	def processImagesPipeline(self,folder):
+
+		X = []
+		Y = []
+		lb = preprocessing.LabelBinarizer()
+		#lb.fit_transform(['n03131574-craddle','n04222210-single-bed'])
+		#classes = ['n07730207-carrot','n04222210-single-bed', 'n00015388-animal','n00017222-flower','n00523513-sport','n01503061-bird','n12992868-fungus']
+		#classes = ['n07730207-carrot','n04222210-single-bed', 'n00015388-animal','n00017222-flower','n00523513-sport','n01503061-bird','n12992868-fungus']
+		#classes = ['n07730207-carrot','n04222210-single-bed', 'n00015388-animal','n00017222-flower','n00523513-sport','n01503061-bird','n12992868-fungus']
+		classes = ["windows-accessories","doors-and-doorways","rooflights-roof-windows","building-areas-systems","ground-substructure","floors-accessories","stairs","ceilings","wall-finishes","roof-structures-finishes","hvac-cooling-systems","insulation","lighting","furniture-fittings","external-works","building-materials","bathroom-sanitary-fittings","structural-frames-walls","drainage-water-supply","communications-transport-security","green-building-products"]
+		#classes = ['n07730207-carrot','n04222210-single-bed']
+		lb.fit_transform(classes)
+
+		im_paths = []
+		im_labels = []
+		#for image_type in ['n03131574-craddle','n04222210-single-bed']:
+		for image_type in classes:
+			mypath = folder + image_type
+			onlyfiles = [ f for f in listdir(mypath) if isfile(join(mypath,f)) ]
+			for file_name in onlyfiles:
+				if file_name != '.DS_Store':
+					im_path = mypath = folder + image_type + '/' + file_name
+					#outfile = folder + image_type + '-resized/' + file_name
+					im_paths.append(im_path)
+					im_labels.append(image_type)
+
+		combined = zip(im_paths, im_labels)
+		random.shuffle(combined)
+
+		im_paths[:], im_labels[:] = zip(*combined)
+
+
+		print "load, scale, crop and calculate image average"
+		imlist,average_image = self.calculate_average_image(im_paths)
+		#average_image.show()
+
+		i = 0
+		#for im_path in im_paths:
+		for im in imlist:
+			# Substract average image and convert it to BW
+			# Then convert it to monochrome and append it to X
+			# Append the label to Y
+			try:
+				#im_raw = np.array(im,dtype=theano.config.floatX)
+				#im_raw = np.asarray(im, dtype=theano.config.floatX) / 256.
+				#print im_raw
+				#im.show()
+				im_ini = im
+				#print im.size
+				im = self.substract_average_image(im, average_image)
+				#print im.size
+				#im.show()
+
+				#Rotations 
+				# im_r = im.rotate(15)
+				# im_r_2 = im.rotate(-15)
+				# im_r_3 = im.rotate(180)
+				#im_r.show()
+				#im_r_2.show()
+
+				#Filters
+				#im_f = im_ini.filter(ImageFilter.DETAIL)
+				# im_f_2 = im_ini.filter(ImageFilter.EDGE_ENHANCE)
+				# im_f_3 = im_ini.filter(ImageFilter.SMOOTH)
+
+				# im_f_test = im_ini.filter(ImageFilter.CONTOUR)
+				# im_f_test.show()
+
+				# im_f_test = im_ini.filter(ImageFilter.EMBOSS)
+				# im_f_test.show()
+
+				#im_f_test = im_ini.filter(ImageFilter.EMBOSS)
+				#im_f_test.show()
+				# im_f_3 = im_ini.filter(ImageFilter.EDGE_ENHANCE_MORE)
+				
+				
+				
+				im = np.asarray(im, dtype=theano.config.floatX) / 256.
+				# im_r = np.asarray(im_r, dtype=theano.config.floatX) / 256.
+				# im_r_2 = np.asarray(im_r_2, dtype=theano.config.floatX) / 256.
+				# im_r_3 = np.asarray(im_r_3, dtype=theano.config.floatX) / 256.
+				#im_f = np.asarray(im_f, dtype=theano.config.floatX) / 256.
+				# im_f_2 = np.asarray(im_f_2, dtype=theano.config.floatX) / 256.
+				# im_f_3 = np.asarray(im_f_3, dtype=theano.config.floatX) / 256.
+				
+				#im = im.transpose(2, 0, 1)
+				#X.append(np.array(im, dtype=theano.config.floatX))
+				#X.append(np.array(im_raw, dtype=theano.config.floatX))
+				X.append(im)
+				# X.append(im_r)
+				# X.append(im_r_2)
+				# X.append(im_r_3)
+				#X.append(im_f)
+				# X.append(im_f_2)
+				# X.append(im_f_3)
+				# X.append(np.array(im_r, dtype=theano.config.floatX))
+				# X.append(np.array(im_r_2, dtype=theano.config.floatX))
+
+				#Uncomment this if you want to work with monochrome
+				# im = im.convert('L')
+				# pixels_monochrome = np.array(list(im.getdata()), dtype=np.float)
+							
+				# # scale between 0-1 to speed up computations
+				# min_max_scaler = preprocessing.MinMaxScaler(feature_range=(0,1), copy=True)
+				# pixels_monochrome = min_max_scaler.fit_transform(pixels_monochrome)
+
+				# X.append(pixels_monochrome)
+
+
+				#Y.append(lb.transform([im_labels[i]])[0][0])
+				label = lb.transform([im_labels[i]])[0][0]
+				# label = np.asarray(label, dtype=theano.config.floatX)
+				# label = np.ndarray.astype(label,dtype=theano.config.floatX) 
+				Y.append(label)
+				# Y.append(label)
+				# Y.append(label)	
+				#Y.append(label)	
+				# Y.append(label)	
+				# Y.append(label)	
+				# Y.append(label)	
+			except Exception, e:
+				raise e
+
+
+			#break
+			
+			# print Y
+			# print len(Y)
+			#im_aux.show()
+			
+			# if self.verbose:
+			# 	#sys.stdout.write("\r Image Type: {0} File Name: {1} Process: {2}/{3}".format(image_type, file_name, count, len(im_paths)))
+			# 	#sys.stdout.write("\r File Name: {0} Process: {1}/{2}".format(im_path, count, len(im_paths)))
+			# 	sys.stdout.write("\r Process: {0}/{1}".format(i, len(im_paths)))
+			# 	sys.stdout.flush()
+
+			# if i == 2:
+			# 	break
+
+			i += 1
+
+		train_length = int(round(len(X) * 0.60))
+		valid_length = int(round(len(X) * 0.20))
+		test_length = int(round(len(X) * 0.20))
+
+		def flaten_aux(V):
+			return V.flatten(order='F')
+
+		X = map(flaten_aux, X)
+
+		X_train = X[0:train_length]
+		X_valid = X[train_length: (train_length + valid_length)]
+		X_test = X[-test_length:]
+
+		# def flaten_aux(V):
+		# 	#return V.flatten(order='C')
+		# 	return V.flatten(order='F')
+		# #vfunc = np.vectorize(flaten_aux)
+
+		# X_train = map(flaten_aux, X_train)
+		# X_valid = map(flaten_aux, X_valid)
+		# X_test = map(flaten_aux, X_test)
+		#print X_train
+		#print X_train.size
+		#X_train = vfunc(X_train)
+		# X_valid = vfunc(X_train)X_valid_flat.flatten(order='F')
+		# X_test = X_test_flat.flatten(order='F')
+
+
+		#X_train = X_train.flatten(order='F')
+		#X_valid = X_valid.flatten(order='F')
+		#X_test = X_test.flatten(order='F')
+
+		# Y_train = np.array(Y[0:train_length], dtype='int32')
+		# Y_valid = np.array(Y[train_length:(train_length + valid_length)], dtype='int32')
+		# Y_test = np.array(Y[-test_length:], dtype='int32')
+		# Y = np.array(Y, dtype='int32')
+		# Y = Y.reshape(Y.shape[0], -1) 
+		# print Y
+		Y_train = Y[0:train_length]
+		Y_valid = Y[train_length:(train_length + valid_length)]
+		Y_test = Y[-test_length:]
+		#print Y_test
+
+		train_set = [X_train,Y_train]
+		valid_set = [X_valid,Y_valid]
+		test_set = [X_test,Y_test]
+
+		print "X_train {} X_validation {} X_test {}".format(len(X_train),len(X_valid),len(X_test))
+		print "Y_train {} Y_validation {} Y_test {}".format(len(Y_train),len(Y_valid),len(Y_test))
+
+		output = open('../data/train_set.pkl', 'wb')
+		cPickle.dump(train_set, output,protocol=-1)
+		output.close()
+
+		output = open('../data/valid_set.pkl', 'wb')
+		cPickle.dump(valid_set, output,protocol=-1)
+		output.close()
+
+		output = open('../data/test_set.pkl', 'wb')
+		cPickle.dump(test_set, output,protocol=-1)
+		output.close()
+
+		return train_set,valid_set,test_set
+
 	def createFolderStructure(self):
 
 		""" query to get the number of images per category
@@ -222,162 +466,14 @@ AND products.`category_id` IS NOT NULL
 
 				i += 1
 
-	def processImagesPipeline(self,folder):
-
-		X = []
-		Y = []
-		lb = preprocessing.LabelBinarizer()
-		#lb.fit_transform(['n03131574-craddle','n04222210-single-bed'])
-		lb.fit_transform(['n07730207-carrot','n04222210-single-bed'])
-
-		im_paths = []
-		im_labels = []
-		#for image_type in ['n03131574-craddle','n04222210-single-bed']:
-		for image_type in ['n07730207-carrot','n04222210-single-bed']:
-			mypath = folder + image_type
-			onlyfiles = [ f for f in listdir(mypath) if isfile(join(mypath,f)) ]
-			for file_name in onlyfiles:
-				if file_name != '.DS_Store':
-					im_path = mypath = folder + image_type + '/' + file_name
-					#outfile = folder + image_type + '-resized/' + file_name
-					im_paths.append(im_path)
-					im_labels.append(image_type)
-
-		combined = zip(im_paths, im_labels)
-		random.shuffle(combined)
-
-		im_paths[:], im_labels[:] = zip(*combined)
-
-		print "load, scale, crop and calculate image average"
-		imlist,average_image = self.calculate_average_image(im_paths)
-		
-		i = 0
-		#for im_path in im_paths:
-		for im in imlist:
-			# Substract average image and convert it to BW
-			# Then convert it to monochrome and append it to X
-			# Append the label to Y
-			try:
-				im = self.substract_average_image(im, average_image)
-
-				X.append(np.array(im, dtype=theano.config.floatX))
-				
-				#imarr = np.array(im, dtype=theano.config.floatX)
-				#imarr = imarr.flatten(order='F')
-				#imarr = imarr.flatten(order='C')
-				#print imarr
-				#X.append(imarr)
-				#im_aux = np.asarray(im, dtype='float64') / 256.
-				# put image in 4D tensor of shape (1, 3, height, width)
-				#img_ = im_aux.transpose(2, 0, 1).reshape(1, 3, im.size[0], im.size[1])
-				#print img_
-				#X.append(img_)
-
-				#im.transpose(2, 0, 1).reshape(1, 3, 639, 516)
-				#print np.array(im, dtype=theano.config.floatX)
-				#print "reshape"
-				#im = im.reshape(1, 3, im.size[0], im.size[1])
-
-				#print np.array(im, dtype=theano.config.floatX)
-				
-
-
-				#X.append(np.array(im, dtype='float64'))
-				#X.append(np.array(np.round(im), dtype=np.uint8))
-
-				#Uncomment this if you want to work with monochrome
-				# im = im.convert('L')
-				# pixels_monochrome = np.array(list(im.getdata()), dtype=np.float)
-							
-				# # scale between 0-1 to speed up computations
-				# min_max_scaler = preprocessing.MinMaxScaler(feature_range=(0,1), copy=True)
-				# pixels_monochrome = min_max_scaler.fit_transform(pixels_monochrome)
-
-				# X.append(pixels_monochrome)
-
-
-				Y.append(lb.transform([im_labels[i]])[0][0])
-			except Exception, e:
-				print e
-			
-			# print Y
-			# print len(Y)
-			#im_aux.show()
-			
-			if self.verbose:
-				#sys.stdout.write("\r Image Type: {0} File Name: {1} Process: {2}/{3}".format(image_type, file_name, count, len(im_paths)))
-				#sys.stdout.write("\r File Name: {0} Process: {1}/{2}".format(im_path, count, len(im_paths)))
-				sys.stdout.write("\r Process: {0}/{1}".format(i, len(im_paths)))
-				sys.stdout.flush()
-
-			# if i == 0:
-			# 	break
-
-			i += 1
-
-		train_length = int(round(len(X) * 0.60))
-		valid_length = int(round(len(X) * 0.20))
-		test_length = int(round(len(X) * 0.20))
-
-		X_train = X[0:train_length]
-		X_valid = X[train_length: (train_length + valid_length)]
-		X_test = X[-test_length:]
-
-		def flaten_aux(V):
-			#return V.flatten(order='C')
-			return V.flatten(order='F')
-		#vfunc = np.vectorize(flaten_aux)
-
-		X_train = map(flaten_aux, X_train)
-		X_valid = map(flaten_aux, X_valid)
-		X_test = map(flaten_aux, X_test)
-		#print X_train
-		#print X_train.size
-		#X_train = vfunc(X_train)
-		# X_valid = vfunc(X_train)X_valid_flat.flatten(order='F')
-		# X_test = X_test_flat.flatten(order='F')
-
-
-		#X_train = X_train.flatten(order='F')
-		#X_valid = X_valid.flatten(order='F')
-		#X_test = X_test.flatten(order='F')
-
-		Y_train = np.array(Y[0:train_length], dtype=theano.config.floatX)
-		Y_valid = np.array(Y[train_length:(train_length + valid_length)], dtype=theano.config.floatX)
-		Y_test = np.array(Y[-test_length:], dtype=theano.config.floatX)
-
-		train_set = [X_train,Y_train]
-		valid_set = [X_valid,Y_valid]
-		test_set = [X_test,Y_test]
-
-		print "X_train {} X_validation {} X_test {}".format(len(X_train),len(X_valid),len(X_test))
-		print "Y_train {} Y_validation {} Y_test {}".format(len(Y_train),len(Y_valid),len(Y_test))
-
-		output = open('../data/train_set.pkl', 'wb')
-		cPickle.dump(train_set, output,protocol=-1)
-		output.close()
-
-		output = open('../data/valid_set.pkl', 'wb')
-		cPickle.dump(valid_set, output,protocol=-1)
-		output.close()
-
-		output = open('../data/test_set.pkl', 'wb')
-		cPickle.dump(test_set, output,protocol=-1)
-		output.close()
-
-		return train_set,valid_set,test_set
-
 
 if __name__ == '__main__':
 	
-	#folder = '/Applications/MAMP/htdocs/DeepLearningTutorials/data/cnn-furniture-reduced-2/'
+	folder = '/Applications/MAMP/htdocs/DeepLearningTutorials/data/categories/'
 	#folder = '/Applications/MAMP/htdocs/DeepLearningTutorials/data/cnn-furniture/'
-	fe = FetexImage(verbose=True, path = '/Applications/MAMP/htdocs/DeepLearningTutorials/')
+	fe = FetexImage(verbose=True)
 	#fe.scale_and_crop_test('/Applications/MAMP/htdocs/DeepLearningTutorials/data/cnn-furniture/n03131574-craddle/n03131574_16.JPEG')
 	#print fe.convert_to_bw_and_scale()
-	#train_set,valid_set,test_set = fe.processImagesPipeline(folder)
+	train_set,valid_set,test_set = fe.processImagesPipeline(folder)
 	#fe.createFolderStructure()
-	#fe.downloadImages()
-
-
 

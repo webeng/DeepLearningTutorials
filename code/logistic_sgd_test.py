@@ -211,10 +211,10 @@ def load_data(dataset):
     # f.close()
 
     #folder = '/Applications/MAMP/htdocs/DeepLearningTutorials/data/cnn-furniture/'
-    folder = '/Applications/MAMP/htdocs/DeepLearningTutorials/data/cnn-furniture-reduced-3/'
-    #folder = '/Applications/MAMP/htdocs/DeepLearningTutorials/data/cnn-furniture-reduced/'
-    fe = FetexImage(verbose=True)
-    train_set,valid_set,test_set = fe.processImagesPipeline(folder)
+    #folder = '/Applications/MAMP/htdocs/DeepLearningTutorials/data/cnn-furniture-reduced-3/'
+    # folder = '/Applications/MAMP/htdocs/DeepLearningTutorials/data/categories/'
+    # fe = FetexImage(verbose=True,support_per_class=1000,folder=folder)
+    # train_set,valid_set,test_set = fe.processImagesPipeline()
 
     pkl_file = open( '../data/train_set.pkl', 'rb')
     train_set = cPickle.load(pkl_file)
@@ -322,8 +322,8 @@ def sgd_optimization_mnist(learning_rate=0.13, n_epochs=1000,
 
     # construct the logistic regression class
     # Each MNIST image has size 28*28
-    #classifier = LogisticRegression(input=x, n_in=28 * 28, n_out=10)
-    classifier = LogisticRegression(input=x, n_in=256 * 256, n_out=2)
+    classifier = LogisticRegression(input=x, n_in=28 * 28, n_out=10)
+    #classifier = LogisticRegression(input=x, n_in=256 * 256, n_out=2)
 
     # the cost we minimize during training is the negative log likelihood of
     # the model in symbolic format
@@ -472,12 +472,29 @@ def sgd_optimization_mnist(learning_rate=0.13, n_epochs=1000,
                           ' ran for %.1fs' % ((end_time - start_time)))
 
 
+def cosine_distance(a, b):
+    import numpy as np
+    from numpy import linalg as LA 
+    dot_product =  np.dot(a,b.T)
+    cosine_distance = dot_product / (LA.norm(a) * LA.norm(b))
+    return cosine_distance
+
+def reconstructImage(arr):
+    from PIL import Image
+    arr = arr * 256
+    arr = numpy.array(numpy.round(arr),dtype=numpy.uint8)
+
+    a = arr.reshape((28, 28))
+
+    im = Image.fromarray(a,mode="L")
+    return im
+
 def predict():
-    """
-    An example of how to load a trained model and use it
+    
+    """An example of how to load a trained model and use it
     to predict labels.
     """
-
+    
     # load the saved model
     classifier = cPickle.load(open('best_model.pkl'))
 
@@ -492,10 +509,32 @@ def predict():
     test_set_x, test_set_y = datasets[2]
     test_set_x = test_set_x.get_value()
 
-    predicted_values = predict_model(test_set_x[:10])
-    print ("Predicted values for the first 10 examples in test set:")
-    print predicted_values
+    im_1 = reconstructImage(test_set_x[2])
+    im_2 = reconstructImage(test_set_x[5])
+    # im_1.show()
+    # im_2.show()
+    
+    #predicted_values = predict_model(test_set_x[:10])
+    #predicted_values = predict_model(test_set_x[:10])
+
+    get_input = theano.function(
+        inputs=[classifier.input],
+        outputs=classifier.input
+    )
+    
+    # 4 and 6 positions are 4
+    a = get_input([test_set_x[2]])
+    b = get_input([test_set_x[5]])
+    print a.shape
+    print b.shape
+    print cosine_distance(a, b)
+
+    #print get_input(test_set_x[0:1]).sum()
+
+    # print ("Predicted values for the first 10 examples in test set:")
+    # print predicted_values
 
 
 if __name__ == '__main__':
-    sgd_optimization_mnist(batch_size=250, n_epochs=10000)
+    #sgd_optimization_mnist()
+    predict()

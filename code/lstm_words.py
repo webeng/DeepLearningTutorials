@@ -212,7 +212,7 @@ def lstm_layer(tparams, state_below, options, prefix='lstm', x=None):
                                                            dim_proj)],
                                 name=_p(prefix, '_layers'),
                                 n_steps=nsteps)
-    return rval[0],nsteps,state_below,rval
+    return rval[0],nsteps
 
 
 # ff: Feed Forward (normal neural net), only useful to put after lstm
@@ -394,18 +394,15 @@ def build_model(tparams, options):
     emb = tparams['Wemb'][x.flatten()].reshape([n_timesteps,
                                                 n_samples,
                                                 options['dim_proj']])
-    
-    proj,nsteps,state_below,rval = get_layer(options['encoder'])[1](tparams, emb, options,
+    proj,nsteps = get_layer(options['encoder'])[1](tparams, emb, options,
                                             prefix=options['encoder'],
                                             x=x)
-    proj_layer = proj
+
     if options['encoder'] == 'lstm':
         proj = (proj * x[:, :, None]).sum(axis=0)
         proj = proj / x.sum(axis=0)[:, None]
-        proj_encoder = proj
     if options['use_dropout']:
         proj = dropout_layer(proj, use_noise, trng)
-        proj_dropout = proj
 
     pred = tensor.nnet.softmax(tensor.dot(proj, tparams['U']) + tparams['b'])
 
@@ -414,29 +411,13 @@ def build_model(tparams, options):
     
     get_nsteps = theano.function([x], nsteps, name='get_nsteps',on_unused_input='warn')
 
-    get_proj_layer = theano.function([x], proj_layer, name='proj_layer',on_unused_input='warn')
-    get_proj_encoder = theano.function([x], proj_encoder, name='proj_encoder',on_unused_input='warn')
-    get_proj_dropout = theano.function([x], proj_dropout, name='proj_dropout',on_unused_input='warn')
-
-    get_state_below = theano.function([x], state_below, name='get_state_below',on_unused_input='warn')
-    get_rval = theano.function([x], rval, name='get_rval',on_unused_input='warn')
-
     off = 1e-8
     if pred.dtype == 'float16':
         off = 1e-6
-    
-    _EPSILON = 0.01
-    proj /= proj.sum(axis=-1, keepdims=True)
-    # avoid numerical instability with _EPSILON clipping
-    proj = tensor.clip(proj, _EPSILON, 1.0 - _EPSILON)
-    cost = tensor.nnet.categorical_crossentropy(proj, y)
 
-    # train_accuracy = K.mean(K.equal(K.argmax(self.y, axis=-1),
-    #                                         K.argmax(self.y_train, axis=-1)))
+    cost = -tensor.log(pred[tensor.arange(n_samples), y] + off).mean()
 
-    #cost = -tensor.log(pred[tensor.arange(n_samples), y] + off).mean()
-
-    return use_noise, x, y, f_pred_prob, f_pred, cost,get_nsteps, get_proj_layer, get_proj_encoder, get_proj_dropout,get_state_below,get_rval
+    return use_noise, x, y, f_pred_prob, f_pred, cost,get_nsteps
 
 def pred_probs(f_pred_prob, prepare_data, data, iterator, dic, verbose=False):
     """ If you want to use a trained model, this is useful to compute
@@ -480,7 +461,6 @@ def samples(f_pred,x ,dic , verbose=False):
     #x_ixes = [list(x[0])]
     #print x
     x = [x[0][0:10]]
-    print x
     
     x_ixes = list(x[0])
     
@@ -489,25 +469,38 @@ def samples(f_pred,x ,dic , verbose=False):
     #x_ixes = [list(x[0])]
     #x_ixes = list(x[0])
     #x_aux = list(x)
-    for i in xrange(0,100):
+    for i in xrange(0,10):
         #pred_probs = f_pred_prob(x)
         predicted = f_pred(x)[0]
+        print predicted
         #print predicted
-        if  predicted != 0:
-        #predicted = predicted + 1
+        #predicted = numpy.random.choice(range(voc_size), p=pred_probs.ravel())
 
-            x_ixes.append(predicted)
+        #x_ixes.append(predicted)
+        #print x_ixes
+        #x_ixes[0].append(predicted)
+        x_ixes.append(predicted)
+        #print x_ixes
 
-            x = numpy.zeros((len(x_ixes),1),dtype='int64')
-
-            for j in xrange(0,len(x_ixes)):
-                x[j] = [x_ixes[j]]
-        else:
-            print "there is a 0 in da hood"
+        x = numpy.zeros((len(x_ixes),1),dtype='int64')
+        #x = numpy.zeros(len(x_ixes),dtype='int64')
+        #x[len(x_ixes) - 1] = predicted
+        #print x
+        #x = []
+        
+        #for j in xrange(0,len(x_ixes[0])):
+        for j in xrange(0,len(x_ixes)):
+            #print x_ixes[j]
+            x[j] = [x_ixes[j]]
+            #x[j] = x_ixes[0][j]
+            #x[j] = x_ixes[j]
+            #x.append(x_ixes[j])
+        #x = [x]
+        #print x
 
         
 
-    sample = "".join([dic['idx2word'][w_ix] for w_ix in x_ixes])
+    sample = " ".join([dic['idx2word'][w_ix] for w_ix in x_ixes])
     #sample = " ".join([dic['idx2word'][w_ix] for w_ix in x_ixes[0]])
     print sample
 
@@ -527,34 +520,6 @@ def pred_error(f_pred, prepare_data, data, iterator, verbose=False):
         preds = f_pred(x)
         targets = numpy.array(data[1])[valid_index]
         valid_err += (preds == targets).sum()
-    valid_err = 1. - numpy_floatX(valid_err) / len(data[0])
-
-    return valid_err
-
-def pred_error_char(f_pred, prepare_data, data, iterator, verbose=False):
-    """
-    Just compute the error
-    f_pred: Theano fct computing the prediction
-    prepare_data: usual prepare_data for that dataset.
-    """
-    valid_err = 0
-    for _, valid_index in iterator:
-
-        y = [data[1][t] for t in valid_index]
-        x = [data[0][t] for t in valid_index]
-
-        x = numpy.array(x).T
-        #x, mask, y = prepare_data([data[0][t] for t in valid_index],
-        #                          numpy.array(data[1])[valid_index],
-        #                          maxlen=None)
-
-        preds = f_pred(x)
-        targets = numpy.array(data[1])[valid_index]
-        print targets
-        print preds
-        valid_err += (preds == targets).sum()
-        print valid_err
-        #print valid_err
     valid_err = 1. - numpy_floatX(valid_err) / len(data[0])
 
     return valid_err
@@ -667,8 +632,7 @@ def load_sequences():
 
     #text = 'Lorem Ipsum is simply dummy text of the printing and typesetting industry. Lorem Ipsum has been the industry standard dummy text ever since the 1500s, when an unknown printer took a galley of type and scrambled it to make a type specimen book. It has survived not only five centuries, but also the leap into electronic typesetting, remaining essentially unchanged. It was popularised in the 1960s with the release of Letraset sheets containing Lorem Ipsum passages, and more recently with desktop publishing software like Aldus PageMaker including versions of Lorem Ipsum.'
     print '...loading corpus'
-    #f = open('../data/text_input.txt', 'r')
-    f = open('../data/text_input_2.txt', 'r')
+    f = open('../data/text_input.txt', 'r')
     text = f.read()
     text = text.decode('utf-8','replace')
     #print text
@@ -679,7 +643,6 @@ def load_sequences():
     #text = text[0:4000000]
     #text = text[0:1000000]
     text = text[0:100000]
-    #text = text[0:300]
     print getsizeof(text)
     #text = text[0:100] + '.'
     # print text
@@ -697,21 +660,15 @@ def load_sequences():
     print "...creating indexes"
     text_words = []
     for sentence in sentences:
+        # print sentence
+        # print "sentence_length:{}".format(len(sentence))
         for word in sentence:
-            dic['words2idx'][" ".lower()] = 1
-            text_words.append(" ")
-            #uncomment this for jsut words
-            #  dic['words2idx'][word.lower()] = 1
-            #  text_words.append(word)
-            for char in word:
-                dic['words2idx'][char.lower()] = 1
-                text_words.append(char)
+            dic['words2idx'][word.lower()] = 1
+            text_words.append(word)
 
     for i in range(0,len(dic['words2idx'].keys())):
         key = dic['words2idx'].keys()[i]
         dic['words2idx'][key] = i + 1
-
-    #print dic['words2idx']
 
     sequence_length = 1
     num_sequences = len(text_words) / sequence_length
@@ -719,29 +676,33 @@ def load_sequences():
     words , labels = [],[]
     #for sentence in sentences:
     #for sentence in sentences:
-    print "num_sequences: {}".format(num_sequences)
-
+    print num_sequences
+    #for i in range(0,int(num_sequences)):
     for i in range(0,len(text_words)):
-
+        #sequence = text_words[ i * sequence_length : (i+1) * sequence_length]
         sequence = text_words[ i: i + sequence_length]
+        #print sequence
         words_aux = []
-
         for item in sequence:
+            #print item
+            #print dic['words2idx'][item.lower()]
             words_aux.append(dic['words2idx'][item.lower()])
-
+        #print "--"
+        #print text_words[ ((i+1) * sequence_length)]
         words.append(words_aux)
-
-        if (i + sequence_length + 1) >= len(text_words):
-            print "only once"
+        #labels.append(dic['words2idx'][text_words[ i+1 ].lower()])
+        if (i + 1) == len(text_words):
             labels.append(dic['words2idx']['.'])
         else:
-            #print i
-            labels.append(dic['words2idx'][text_words[i + sequence_length + 1].lower()])
-
-    print "vocabulary size: {}".format(len(dic['words2idx'].keys()))
-    print "...creating training data"
+            labels.append(dic['words2idx'][text_words[i+1].lower()])
+    #print 
     # print words
     # print labels
+    print "...creating training data"
+    # X = np.array(sentences_words)
+    # Y = np.array(sentences_labels)
+    #X = np.array(words, dtype='int64')
+    #Y = np.array(labels, dtype='int64')
     X = words
     Y = labels
 
@@ -840,46 +801,22 @@ def context(l, win):
 
     return out
 
-
-def sampleK(h, seed_ix, n):
-  """ 
-  sample a sequence of integers from the model 
-  h is memory state, seed_ix is seed letter for first time step
-  """
-  x = numpy.zeros((vocab_size, 1))
-  #print vocab_size
-  x[seed_ix] = 1
-  ixes = []
-  for t in xrange(n):
-    h = np.tanh(np.dot(Wxh, x) + np.dot(Whh, h) + bh)
-    #print h.shape
-    y = np.dot(Why, h) + by
-    #print y.shape
-    p = np.exp(y) / np.sum(np.exp(y))
-    #print p.shape
-    ix = np.random.choice(range(vocab_size), p=p.ravel())
-    #print ix
-    x = np.zeros((vocab_size, 1))
-    x[ix] = 1
-    ixes.append(ix)
-  return ixes
-
 def train_lstm(
-    dim_proj=128,  # word embeding dimension and LSTM number of hidden units.
-    patience=20,  # Number of epoch to wait before early stop if no progress
+    dim_proj=256 * 2,  # word embeding dimension and LSTM number of hidden units.
+    patience=30,  # Number of epoch to wait before early stop if no progress
     max_epochs=5000,  # The maximum number of epoch to run
     dispFreq=10,  # Display to stdout the training progress every N updates
     decay_c=0.,  # Weight decay for the classifier applied to the U weights.
-    lrate=0.001,  # Learning rate for sgd (not used for adadelta and rmsprop)
-    n_words=100,  # Vocabulary size
+    lrate=0.0001,  # Learning rate for sgd (not used for adadelta and rmsprop)
+    n_words=10000,  # Vocabulary size
     optimizer=adadelta,  # sgd, adadelta and rmsprop available, sgd very hard to use, not recommanded (probably need momentum and decaying learning rate).
     encoder='lstm',  # TODO: can be removed must be lstm.
     saveto='lstm_model.npz',  # The best model will be saved there
-    validFreq=370 * 2,  # Compute the validation error after this number of update.
+    validFreq=370,  # Compute the validation error after this number of update.
     saveFreq=1110,  # Save the parameters after every saveFreq updates
     maxlen=100,  # Sequence longer then this get ignored
-    batch_size=25,  # The batch size during training.
-    valid_batch_size=25,  # The batch size used for validation/test set.
+    batch_size=32,  # The batch size during training.
+    valid_batch_size=64,  # The batch size used for validation/test set.
     dataset='imdb',
 
     # Parameter for extra option
@@ -889,8 +826,7 @@ def train_lstm(
     reload_model=None,  # Path to a saved model we want to start from.
     test_size=-1,  # If >0, we keep only this number of test example.
 ):
-    # load_sequences_chars()
-    # return 1
+    
     #print context(range(0,16), 4)
     #return 1
     # Model options
@@ -903,9 +839,28 @@ def train_lstm(
     # train, valid, test = load_data(n_words=n_words, valid_portion=0.05,
     #                                maxlen=maxlen)
 
+    # print train[0][0]
+    # print train[1][0]
+    #print numpy.max(train[1]) + 1
+
     #train,valid,test,dic = load_text()
     train,valid,test,dic = load_sequences()
-    
+
+    #print train[1]
+    #print len(dic['words2idx'].keys())
+    #print train[0][0]
+    #print train[1][0]
+    #print train[0][0]
+    #train[0][0] = [16]
+    #train[0][0] = []
+    #train[1][0] = 1
+    # ydim = 0
+    # for y in train[1]:
+    #     if numpy.max(y) > ydim:
+    #         ydim = numpy.max(y)
+    # ydim += 1
+    # print ydim
+
     if test_size > 0:
         # The test set is sorted by size, but we want to keep random
         # size example.  So we must select a random selection of the
@@ -935,15 +890,12 @@ def train_lstm(
 
     # use_noise is for dropout
     (use_noise, x,
-     y, f_pred_prob, f_pred, cost,get_nsteps,get_proj_layer, get_proj_encoder, get_proj_dropout,get_state_below,get_rval) = build_model(tparams, model_options)
+     y, f_pred_prob, f_pred, cost,get_nsteps) = build_model(tparams, model_options)
 
     # print train[0][0:10]
     # print train[1][0:10]
-    dic['idx2word'] = dict((k, v) for v, k in dic['words2idx'].iteritems())    
-    #print dic['idx2word'][2]
-    # for v, k in dic['words2idx'].iteritems():
-    #     print v
-    #     print k
+    dic['idx2word'] = dict((k, v) for v, k in dic['words2idx'].iteritems())
+    print "vocabulary size: {}".format(len(dic['idx2word'].keys()))
 
     if decay_c > 0.:
         decay_c = theano.shared(numpy_floatX(decay_c), name='decay_c')
@@ -989,11 +941,9 @@ def train_lstm(
             # Get new shuffled index for the training set.
             #kf = get_minibatches_idx(len(train[0]), batch_size, shuffle=True)
             kf = get_minibatches_idx(len(train[0]), batch_size, shuffle=False)
-            #print kf
             #print len(train[0])
             #print kf
-            for batch_index, train_index in kf:
-                #print "batch_index".format(batch_index)
+            for _, train_index in kf:
                 #print "--------------------------------"
                 #print train_index
                 uidx += 1
@@ -1002,8 +952,19 @@ def train_lstm(
                 # Select the random examples for this minibatch                
                 y = [train[1][t] for t in train_index]
                 x = [train[0][t] for t in train_index]
-
-                #print "".join([dic['idx2word'][w_ix[0]] for w_ix in x ])
+                #x = [train[0][t][0] for t in train_index]
+                #print x
+                # print len(x)
+                #x = contextwin(x, 7)
+                #x = contextwinright(x, 3
+                # TODO: each input in x must be the same length. I thought LSTM were capable of managing multiple lenght inputs
+                # x = context(x, 1)
+                #x = numpy.array(x)
+                #print x.shape
+                # y = numpy.array(y)
+                # print len(x)
+                # print len(x[0])
+                # print len(x[1])
 
                 #print x
                 #print len(x)
@@ -1025,68 +986,27 @@ def train_lstm(
 
                 #print " ".join([dic['idx2word'][w_ix] for w_ix in x[0]])
                 #x = [ contextwin(sample, 7) for sample in x]
-                #x = [train[0][t-10:t] for t in train_index]
-                #for t in train_index:
+                #print x[0]
+                #n_samples += x.shape[1]
 
-                x = []
-                unroll = 1
-                for i in range(0,len(train_index)):
-                    
-                    t = train_index[i]
-                    aux = []
-                    if i < unroll and batch_index == 0:
-                        aux = [[1]] * (unroll - i) + train[0][t:t+i]
-                    elif i < unroll and batch_index > 0:
-                        #aux = [[1]] * (unroll - i) + train[0][t:t+i]
-                        #aux = train[0][t - (unroll + i):t] + train[0][t:t+i]
-                        #aux = train[0][t - (unroll + i):t]
-                        aux = train[0][t - unroll:t]
-                        #print "get it from the previous batch"
-                    else:
-                        aux = train[0][t - unroll :t]
-
-                    aux = [c[0] for c in aux]
-                    x.append(numpy.array(aux))
-                    
-
-                # print len(x)
+                
+                # x = range(1,8)
+                # x = []
+                #x = map(numpy.array, x)
                 #print x
-                # for seq in x:
-                #     print seq
-                #     if len(seq) > 0:
-                #         print "".join([dic['idx2word'][w_ix] for w_ix in seq ] )
-
-                x = numpy.array(x).T
-                #x = numpy.array(x)
-                
-                #print x
-                #print x.shape
-
-                
-                    #for char in seq:
-                
-                #print " ".join([dic['idx2word'][w_ix] for w_ix in x[0]])
-
-
-#                x = [[1],[2],[6],[10],[3],[4],[5],[7]]
-                # x = [
-                # numpy.array([1,1]),
-                # numpy.array([1,2]),
-                # numpy.array([2,6]),
-                # numpy.array([6,10]),
-                # numpy.array([10,3]),
-                # numpy.array([3,4]),
-                # numpy.array([4,5]),
-                # numpy.array([5,7])
+                # x = x[
+                #     numpy.array([1]),
+                #     numpy.array([2]),
+                #     numpy.array([3]),
+                #     numpy.array([4]),
+                #     numpy.array([5]),
+                #     numpy.array([6]),
+                #     numpy.array([7])
                 # ]
-                #print get_rval(x)[0].shape
-                #print get_rval(x)[0]
 
-                # print get_rval(x)[1].shape
-                # print get_rval(x)[0].sum()
-                #print rval[1].value
 
-                # x = numpy.array(x).T
+                # x = [[1],[2],[6],[10],[3],[4],[5],[7]]
+                x = numpy.array(x).T
                 # y = [2,6,10,3,4,5,7,8]
 
                 # print x
@@ -1097,29 +1017,18 @@ def train_lstm(
                 #y = numpy.array(range(6,11))
                 # y = numpy.array([0,1])
                 #print x.shape
+
                 n_samples += x.shape[0]
-                #n_samples += x.shape[0]
 
                 cost = f_grad_shared(x,y)
                 #print nsteps.get_value()
                 #print get_nsteps([[1]])
-                
+                #print get_nsteps([1]).get_value()
 
                 #print cost.get_value().shape
                 # print "costicontes"
                 # print cost
-                
-                # print x.shape
-                # print get_proj_layer([[1]]).shape
-                # print get_proj_encoder([[1]]).shape
-                # print get_proj_dropout([[1]]).shape
-                # print get_state_below([[1]]).shape
-                # print "nsteps {}".format(get_nsteps(x))
-
                 f_update(lrate)
-
-                # if numpy.mod(uidx, validFreq) == 0:
-                #     samples(f_pred,x,dic)
                 
                 # if numpy.mod(uidx, validFreq) == 0:
                 #     #pred_x = numpy.array(numpy.array([0,1]))
@@ -1157,18 +1066,18 @@ def train_lstm(
                     print 'Done'
 
                 if numpy.mod(uidx, validFreq) == 0:
-                    #samples(f_pred,x,dic)
+                    
                     start_time_2 = time.time()
 
                     use_noise.set_value(0.)
                     print "train_error"
                     print len(kf)
-                    train_err = pred_error_char(f_pred, prepare_data, train, kf)
+                    train_err = pred_error(f_pred, prepare_data, train, kf)
                     print "train_err"
-                    valid_err = pred_error_char(f_pred, prepare_data, valid,
+                    valid_err = pred_error(f_pred, prepare_data, valid,
                                            kf_valid)
                     print "valid_error"
-                    test_err = pred_error_char(f_pred, prepare_data, test, kf_test)
+                    test_err = pred_error(f_pred, prepare_data, test, kf_test)
                     print "test_err"
                     history_errs.append([valid_err, test_err])
 
@@ -1182,7 +1091,7 @@ def train_lstm(
                     print ('Train ', train_err, 'Valid ', valid_err,
                            'Test ', test_err)
 
-                    
+                    samples(f_pred,x,dic)
 
                     if (len(history_errs) > patience and
                         valid_err >= numpy.array(history_errs)[:-patience,
@@ -1213,9 +1122,9 @@ def train_lstm(
 
     use_noise.set_value(0.)
     kf_train_sorted = get_minibatches_idx(len(train[0]), batch_size)
-    train_err = pred_error_char(f_pred, prepare_data, train, kf_train_sorted)
-    valid_err = pred_error_char(f_pred, prepare_data, valid, kf_valid)
-    test_err = pred_error_char(f_pred, prepare_data, test, kf_test)
+    train_err = pred_error(f_pred, prepare_data, train, kf_train_sorted)
+    valid_err = pred_error(f_pred, prepare_data, valid, kf_valid)
+    test_err = pred_error(f_pred, prepare_data, test, kf_test)
 
     print 'Train ', train_err, 'Valid ', valid_err, 'Test ', test_err
     if saveto:

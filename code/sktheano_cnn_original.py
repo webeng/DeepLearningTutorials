@@ -30,7 +30,6 @@ import theano.tensor as T
 from theano.tensor.signal import downsample
 from theano.tensor.nnet import conv
 import logging
-import os
 _logger = logging.getLogger("theano.gof.compilelock")
 _logger.setLevel(logging.WARN)
 logger = logging.getLogger(__name__)
@@ -40,7 +39,7 @@ mode = theano.Mode(linker='cvm')
 
 class CNN(object):
     """
-    Convolutional Neural Network, 
+    Conformal Neural Network, 
     backend by Theano, but compliant with sklearn interface.
 
     This class holds the actual layers, while MetaCNN does
@@ -111,18 +110,12 @@ class CNN(object):
         # Reshape matrix of rasterized images of shape (batch_size, nx*ny)
         # to a 4D tensor, compatible with our LeNetConvPoolLayer
         layer0_input = input.reshape((batch_size, 1, nx, ny))
-        #layer0_input = input.reshape((batch_size, 3, nx, ny))
 
         # Construct the first convolutional pooling layer:
         # filtering reduces the image size to (nx-5+1,ny-5+1)=(24,24)
         # maxpooling reduces this further to (nx/2,ny/2) = (12,12)
         # 4D output tensor is thus of shape (batch_size,nkerns[0],12,12)
         nim = filters[0]
-        # rng = np.random.RandomState(23455)
-        # self.layer0 = LeNetConvPoolLayer(rng, input=layer0_input,
-        #                           image_shape=(batch_size, 1, nx, ny),
-        #                           filter_shape=(nkerns[0], 1, nim, nim),
-        #                                  poolsize=poolsize[0])
         rng = np.random.RandomState(23455)
         self.layer0 = LeNetConvPoolLayer(rng, input=layer0_input,
                                   image_shape=(batch_size, 1, nx, ny),
@@ -166,7 +159,6 @@ class CNN(object):
 
         self.y_pred = self.layer3.y_pred
         self.p_y_given_x = self.layer3.p_y_given_x
-        self.layer2_output = self.layer2.input
 
         if self.output_type == 'real':
             self.loss = lambda y: self.mse(y)
@@ -245,7 +237,6 @@ class MetaCNN(BaseEstimator):
                  ### Note, n_in and n_out are actually set in 
                  ### .fit, they are here to help cPickle
                  n_in=50, n_out=2):
-
         self.learning_rate = float(learning_rate)
         self.nkerns = nkerns
         self.n_hidden = n_hidden
@@ -298,13 +289,10 @@ class MetaCNN(BaseEstimator):
         self.predict_wrap = theano.function(inputs=[self.x],
                                             outputs=self.cnn.y_pred,
                                             mode=mode)
-
-        self.predict_vector = theano.function(inputs=[self.x],
-                                            outputs=self.cnn.layer2_output,
-                                            mode=mode)
         self.predict_proba_wrap = theano.function(inputs=[self.x],
                                                   outputs=self.cnn.p_y_given_x,
                                                   mode=mode)
+
 
     def score(self, X, y):
         """Returns the mean accuracy on the given test data and labels.
@@ -324,6 +312,7 @@ class MetaCNN(BaseEstimator):
         """
         return np.mean(self.predict(X) == y)
 
+
     def fit(self, X_train, Y_train, X_test=None, Y_test=None,
             validation_frequency=2, n_epochs=None):
         """ Fit model
@@ -340,11 +329,7 @@ class MetaCNN(BaseEstimator):
         """
         #prepare the CNN 
         self.n_in = int(np.sqrt(X_train.shape[1]))
-        self.n_in = 64
-        #print self.n_in
-        #print X_train.shape[1]
         self.n_out = len(np.unique(Y_train))
-        print "n_out:{}".format(self.n_out)
         self.ready()
 
         if X_test is not None:
@@ -370,10 +355,9 @@ class MetaCNN(BaseEstimator):
 
         index = T.lscalar('index')    # index to a [mini]batch
 
-        # cost = self.cnn.loss(self.y)\
-        #     + self.L1_reg * self.cnn.L1\
-        #     + self.L2_reg * self.cnn.L2_sqr
-        cost = self.cnn.loss(self.y)
+        cost = self.cnn.loss(self.y)\
+            + self.L1_reg * self.cnn.L1\
+            + self.L2_reg * self.cnn.L2_sqr
 
         compute_train_error = theano.function(inputs=[index, ],
                                               outputs=self.cnn.loss(self.y),
@@ -401,24 +385,15 @@ class MetaCNN(BaseEstimator):
         # manually create an update rule for each model parameter. We thus
         # create the updates dictionary by automatically looping over all
         # (params[i],grads[i]) pairs.
-        # self.updates = {}
-        # for param_i, grad_i in zip(self.params, self.grads):
-        #     self.updates[param_i] = param_i - self.learning_rate * grad_i
+        self.updates = {}
+        for param_i, grad_i in zip(self.params, self.grads):
+            self.updates[param_i] = param_i - self.learning_rate * grad_i
 
-        self.updates = [
-        (param_i, param_i - self.learning_rate * grad_i)
-        for param_i, grad_i in zip(self.params, self.grads)
-        ]
-
-        train_model = theano.function(
-                [index], 
-                cost, 
-                updates=self.updates,
-                givens={
+        train_model = theano.function([index], cost, updates=self.updates,
+                                      givens={
                 self.x: train_set_x[index * self.batch_size: (index + 1) * self.batch_size],
-                self.y: train_set_y[index * self.batch_size: (index + 1) * self.batch_size]
-                }
-        )
+                self.y: train_set_y[index * self.batch_size: (index + 1) * self.batch_size]}
+                                      )
 
         ###############
         # TRAIN MODEL #
@@ -462,8 +437,8 @@ class MetaCNN(BaseEstimator):
                         test_losses = [compute_test_error(i)
                                         for i in xrange(n_test_batches)]
                         this_test_loss = np.mean(test_losses)
-                        note = 'epoch %i, seq %i/%i, train loss %f '\
-                            'test loss loss %f learning rate: %f' % \
+                        note = 'epoch %i, seq %i/%i, tr loss %f '\
+                            'te loss %f lr: %f' % \
                             (epoch, idx + 1, n_train_batches,
                              this_train_loss, this_test_loss, self.learning_rate)
                         logger.info(note)
@@ -480,7 +455,7 @@ class MetaCNN(BaseEstimator):
                             best_iter = iter
                     else:
                         logger.info('epoch %i, seq %i/%i, train loss %f '
-                                    'learning rate: %f' % \
+                                    'lr: %f' % \
                                     (epoch, idx + 1, n_train_batches, this_train_loss,
                                      self.learning_rate))
                 if patience <= iter:
@@ -490,7 +465,6 @@ class MetaCNN(BaseEstimator):
         logger.info("Best xval score of %f %% obtained at iteration %i" %
                     (best_test_loss * 100., best_iter))
 
-        print "Best xval score of %f %% obtained at iteration %i" % (best_test_loss * 100., best_iter)
 
     def predict(self, data):
         """
@@ -546,6 +520,7 @@ class MetaCNN(BaseEstimator):
         
         return np.vstack(preds)
         
+
     def shared_dataset(self, data_xy):
         """ Load the dataset into shared variables """
 
@@ -623,7 +598,8 @@ class MetaCNN(BaseEstimator):
             self.set_params(**params)
             self.ready()
             self._set_weights(weights)
-    
+            
+
     def save(self, fpath='.', fname=None):
         """ Save a pickled representation of Model state. """
         import datetime
@@ -637,8 +613,7 @@ class MetaCNN(BaseEstimator):
             date_obj = datetime.datetime.now()
             date_str = date_obj.strftime('%Y-%m-%d-%H:%M:%S')
             class_name = self.__class__.__name__
-            #fname = '%s.%s.pkl' % (class_name, date_str)
-            fname = 'best_model.pkl'
+            fname = '%s.%s.pkl' % (class_name, date_str)
 
         fabspath = os.path.join(fpath, fname)
 
@@ -894,88 +869,19 @@ class LeNetConvPoolLayer(object):
 
 if __name__ == '__main__':
     from fetex_image import FetexImage
-    import cPickle
-    from PIL import Image
 
     fetex = FetexImage()
-    base_path = '/Applications/MAMP/htdocs/DeepLearningTutorials' 
-    folder = base_path + '/data/cnn-furniture/'
-    #folder = base_path + '/data/categories/'
-    fe = FetexImage(verbose=True,support_per_class=10000,folder=folder,mode='L')
-    #train_set,valid_set,test_set,input = fe.processImagesPipeline()
 
-    pkl_file = open( '../data/train_set.pkl', 'rb')
-    train_set = cPickle.load(pkl_file)
-
-    # pkl_file = open( '../data/valid_set.pkl', 'rb')
-    # valid_set = cPickle.load(pkl_file)
-
-    pkl_file = open( '../data/test_set.pkl', 'rb')
-    test_set = cPickle.load(pkl_file)
-
-    pkl_file = open( '../data/lb.pkl', 'rb')
-    lb = cPickle.load(pkl_file)
-
+    folder = '/Applications/MAMP/htdocs/DeepLearningTutorials/data/categories/'
+    fe = FetexImage(verbose=True,support_per_class=10,folder=folder)
+    train_set,valid_set,test_set,input = fe.processImagesPipeline()
+    
     X_train, Y_train = train_set
     X_test, Y_test = test_set
 
-    X_train = np.asarray(X_train, dtype=theano.config.floatX)
-    X_test = np.asarray(X_test, dtype=theano.config.floatX)
-    
-    print X_train.shape
-    """
-    def evaluate_lenet5(learning_rate=0.1, n_epochs=2,
-                        dataset='mnist.pkl.gz',
-                        nkerns=[(25 / 1) , (25 / 1)], batch_size=400):
-    """
-    cnn = MetaCNN(learning_rate=0.1,nkerns=[25,25], filters=[5,5], batch_size=400,poolsize=[(2,2),(2,2)], n_hidden=400 , n_epochs=4 , n_out=5)
-    #cnn = MetaCNN(n_epochs=10, filters=[5,5])
-    #cnn.fit(X_train,Y_train, X_test=X_test, Y_test=Y_test)
-    #cnn.save(fpath=base_path + '/data/')
+    X, Y  =  input
+    #print X
 
-    # # Predictions after training
-    cnn.load(base_path + '/data/best_model.pkl')
-    #cnn.load('/home/ubuntu/DeepLearningTutorials/data/MetaCNN.2015-10-19-13:59:18.pkl')
-    #sample = np.asarray(X_train, dtype=theano.config.floatX)
-    #print sample[0].reshape((64,64)).shape
-    #Image.fromarray(sample[2].reshape((64,64)),mode="L").show()
+    cnn = CNN(X_train)
 
-    arr = np.array(np.round((X_train[0] * 256).reshape((64,64))),dtype=np.uint8)
-    Image.fromarray(arr,mode="L").show()
-
-    arr = np.array(np.round((X_train[1] * 256).reshape((64,64))),dtype=np.uint8)
-    Image.fromarray(arr,mode="L").show()
-
-    arr = np.array(np.round((X_train[2] * 256).reshape((64,64))),dtype=np.uint8)
-    Image.fromarray(arr,mode="L").show()
-    
-    print Y_train[0:3]
-    # arr = np.array(np.round((X_train[1300] * 256).reshape((64,64))),dtype=np.uint8)
-    # Image.fromarray(arr,mode="L").show()
-    #print sample[0]
-    # #print sample.shape
-    #sample = X_train[0:25]
-    print lb.classes_
-    #sample = X_train[0]
-    #print Y_train[4000:4100]
-    print cnn.predict(X_train[0:3])
-
-    # sample = X_train[4400]
-    # print Y_train[4400]
-    # print cnn.predict(sample)
-    # pkl_file = open( '../data/X_original.pkl', 'rb')
-    # X_original = cPickle.load(pkl_file)
-
-    # a = X_original[0:25]
-    # a = np.asarray(a, dtype=theano.config.floatX)
-    # #fe.reconstructImage(a[2]).show()
-
-    # def flaten_aux(V):
-    #     return V.flatten(order='F')
-
-    # a = a.transpose(0, 3, 1, 2)
-    # a = map(flaten_aux, a)
-    # #print cnn.predict(a)
-    # print cnn.predict_vector(a).shape
-    #print cnn.predict(sample)
-    # #print cnn.predict_wrap(sample)
+    cnn.fit(X_train,Y_train)

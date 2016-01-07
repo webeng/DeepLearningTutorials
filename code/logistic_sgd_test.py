@@ -210,11 +210,23 @@ def load_data(dataset):
     # train_set, valid_set, test_set = cPickle.load(f)
     # f.close()
 
-    #folder = '/Applications/MAMP/htdocs/DeepLearningTutorials/data/cnn-furniture/'
+    #classes = ['stairs', 'ceilings']
+    classes = ['stairs', 'ceilings', "building-areas-systems"]
+    # classes = ["floors-accessories","ground-substructure", "building-areas-systems",
+    #         "furniture-fittings","stairs","rooflights-roof-windows",
+    #         "wall-finishes","ceilings","communications-transport-security",
+    #         "external-works","green-building-products","insulation",
+    #         "building-materials","hvac-cooling-systems","drainage-water-supply",
+    #         "roof-structures-finishes","lighting","structural-frames-walls",
+    #         "doors-and-doorways","bathroom-sanitary-fittings","windows-accessories"]
+    data_path = '/Applications/MAMP/htdocs/DeepLearningTutorials/data/'
+    #data_path = '/home/ubuntu/DeepLearningTutorials/data/'
     #folder = '/Applications/MAMP/htdocs/DeepLearningTutorials/data/cnn-furniture-reduced-3/'
-    # folder = '/Applications/MAMP/htdocs/DeepLearningTutorials/data/categories/'
-    # fe = FetexImage(verbose=True,support_per_class=1000,folder=folder)
-    # train_set,valid_set,test_set = fe.processImagesPipeline()
+
+    #folder = '/Applications/MAMP/htdocs/DeepLearningTutorials/data/categories/'
+    #fe = FetexImage(verbose=True,support_per_class=200,data_path=data_path, dataset='categories', mode='L',classes = classes)
+    fe = FetexImage(verbose=True,support_per_class=500,data_path=data_path, dataset='categories', mode='RGB',classes = classes)
+    train_set,valid_set,test_set = fe.ImagePipeline(cnn_pipe=True)
 
     pkl_file = open( '../data/train_set.pkl', 'rb')
     train_set = cPickle.load(pkl_file)
@@ -242,15 +254,17 @@ def load_data(dataset):
         variable) would lead to a large decrease in performance.
         """
         data_x, data_y = data_xy
-        # print data_y
+        #print data_y
         # print type(data_y)
         # print type(data_y[0])
         shared_x = theano.shared(numpy.asarray(data_x,
                                                dtype=theano.config.floatX),
                                  borrow=borrow)
+
         shared_y = theano.shared(numpy.asarray(data_y,
                                                dtype=theano.config.floatX),
                                  borrow=borrow)
+
         # When storing data on the GPU it has to be stored as floats
         # therefore we will store the labels as ``floatX`` as well
         # (``shared_y`` does exactly that). But during our computations
@@ -536,5 +550,5 @@ def predict():
 
 
 if __name__ == '__main__':
-    #sgd_optimization_mnist()
-    predict()
+    sgd_optimization_mnist()
+    #predict()

@@ -321,6 +321,7 @@ def main(param=None):
         tic = timeit.default_timer()
 
         for i, (x, y) in enumerate(zip(train_lex, train_y)):
+            print x.shape[0]
             rnn.train(x, y, param['win'], param['clr'])
             print '[learning] epoch %i >> %2.2f%%' % (
                 e, (i + 1) * 100. / nsentences),

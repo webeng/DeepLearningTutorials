@@ -149,6 +149,7 @@ def evaluate_lenet5(learning_rate=0.1, n_epochs=200,
     n_valid_batches /= batch_size
     n_test_batches /= batch_size
 
+    print test_set_x.get_value()[0].shape
     # allocate symbolic variables for the data
     index = T.lscalar()  # index to a [mini]batch
 

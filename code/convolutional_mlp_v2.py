@@ -37,6 +37,8 @@ from logistic_sgd_test import LogisticRegression, load_data
 from mlp import HiddenLayer
 from fetex_image import FetexImage
 
+mode = theano.Mode(linker='cvm')
+
 
 class LeNetConvPoolLayer(object):
     """Pool Layer of a convolutional network """
@@ -119,9 +121,13 @@ class LeNetConvPoolLayer(object):
 # def evaluate_lenet5(learning_rate=0.1, n_epochs=100,
 #                     dataset='mnist.pkl.gz',
 #                     nkerns=[(96) , (256)], batch_size=300):
-def evaluate_lenet5(learning_rate=0.1, n_epochs=2,
+# def evaluate_lenet5(learning_rate=0.1, n_epochs=2,
+#                     dataset='mnist.pkl.gz',
+#                     nkerns=[(25 / 1) , (25 / 1)], batch_size=400):
+
+def evaluate_lenet5(learning_rate=0.05, n_epochs=100,
                     dataset='mnist.pkl.gz',
-                    nkerns=[(25 / 1) , (25 / 1)], batch_size=400):
+                    nkerns=[(48 / 1) , (128 / 1), ( 256 / 1)], batch_size=128):
 
     """ Demonstrates lenet on MNIST dataset
 
@@ -163,6 +169,7 @@ def evaluate_lenet5(learning_rate=0.1, n_epochs=2,
 
     # start-snippet-1
     x = T.matrix('x')   # the data is presented as rasterized images
+    #x = T.tensor4('x')   # the data is presented as rasterized images
     #y = T.lvector('y')  # the labels are presented as 1D vector of
     y = T.ivector('y')  # the labels are presented as 1D vector of
                         # [int] labels
@@ -186,63 +193,110 @@ def evaluate_lenet5(learning_rate=0.1, n_epochs=2,
     #layer0_input = x.reshape((batch_size, 1, 28, 28))
     #layer0_input = x.reshape((batch_size, 1, 256, 256))
     #layer0_input = x.reshape((batch_size, 3, 256, 256))
-    layer0_input = x.reshape((batch_size, 3, 64, 64))
+    #layer0_input = x.reshape((batch_size, 3, 64, 64))
+    #layer0_input = x.transpose((0, 3, 1, 2)).reshape((batch_size, 3, 64, 64))
+    #layer0_input = x.transpose((0, 3, 1, 2)).reshape((batch_size, 3, 128, 128))
+    layer0_input = x.reshape((batch_size, 1, 128, 128))
+    #layer0_input = x.transpose((0, 3, 1, 2))
+    #print train_set_y.get_value()
+    #print test_set_x.get_value().shape
+    #layer0_input = x.transpose(0, 3, 1, 2)
     #layer0_input = x
 
     # Construct the first convolutional pooling layer:
-    # filtering reduces the image size to (64-5+1 , 64-5+1) = (60, 60)
-    # maxpooling reduces this further to (60/2, 60/2) = (30, 30)
-    # 4D output tensor is thus of shape (batch_size, nkerns[0], 30, 30)
+    # filtering reduces the image size to (128-13+1 , 128-13+1) = (116, 116)
+    # maxpooling reduces this further to (116/2, 116/2) = (58, 58)
+    # 4D output tensor is thus of shape (batch_size, nkerns[0], 58, 58)
 
     layer0 = LeNetConvPoolLayer(
         rng,
         input=layer0_input,
-        image_shape=(batch_size, 3, 64, 64),
-        filter_shape=(nkerns[0], 3, 5, 5),
+        image_shape=(batch_size, 1, 128, 128),
+        filter_shape=(nkerns[0], 1, 13, 13),
         poolsize=(2, 2)
     )
 
     # Construct the second convolutional pooling layer
-    # filtering reduces the image size to (30-5+1, 30-5+1) = (26, 26)
-    # maxpooling reduces this further to (26/2, 26/2) = (18, 18)
-    # 4D output tensor is thus of shape (batch_size, nkerns[1], 13, 13)
+    # filtering reduces the image size to (58-5+1, 58-5+1) = (54, 54)
+    # maxpooling reduces this further to (54/2, 54/2) = (27, 27)
+    # 4D output tensor is thus of shape (batch_size, nkerns[1], 27, 27)
     layer1 = LeNetConvPoolLayer(
         rng,
         input=layer0.output,
-        image_shape=(batch_size, nkerns[0], 30, 30),
+        image_shape=(batch_size, nkerns[0], 58, 58),
         filter_shape=(nkerns[1], nkerns[0], 5, 5),
         poolsize=(2, 2)
     )
+
+    # Construct the third convolutional pooling layer
+    # filtering reduces the image size to (27-4+1, 27-4+1) = (24, 24)
+    # maxpooling reduces this further to (24/2, 24/2) = (12, 12)
+    # 4D output tensor is thus of shape (batch_size, nkerns[2], 12, 12)
+
+    layer2 = LeNetConvPoolLayer(
+        rng,
+        input=layer1.output,
+        image_shape=(batch_size, nkerns[1], 27, 27),
+        filter_shape=(nkerns[2], nkerns[1], 4, 4),
+        poolsize=(2, 2)
+    )
+    
+    # layer3 = LeNetConvPoolLayer(
+    #     rng,
+    #     input=layer2.output,
+    #     image_shape=(batch_size, nkerns[2], 12, 12),
+    #     filter_shape=(nkerns[3], nkerns[2], 4, 4),
+    #     poolsize=(1, 1)
+    # )
 
     # the HiddenLayer being fully-connected, it operates on 2D matrices of
     # shape (batch_size, num_pixels) (i.e matrix of rasterized images).
     # This will generate a matrix of shape (batch_size, nkerns[1] * 4 * 4),
     # or (500, 50 * 4 * 4) = (500, 800) with the default values.
-    layer2_input = layer1.output.flatten(2)
-    #layer3_input = layer2.output.flatten(2)
+    #layer2_input = layer1.output.flatten(2)
+    layer3_input = layer2.output.flatten(2)
 
     # construct a fully-connected sigmoidal layer
     layer3 = HiddenLayer(
         rng,
-        input=layer2_input,
-        n_in=nkerns[1] * 13 * 13,
-        n_out=400,
+        input=layer3_input,
+        n_in=nkerns[2] * 12 * 12,
+        n_out=200,
+        activation=T.tanh
+    )
+
+    # construct a fully-connected sigmoidal layer
+    layer4 = HiddenLayer(
+        rng,
+        input=layer3.output,
+        n_in=200,
+        n_out=50,
+        activation=T.tanh
+    )
+
+        # construct a fully-connected sigmoidal layer
+    layer5 = HiddenLayer(
+        rng,
+        input=layer4.output,
+        n_in=50,
+        n_out=2,
         activation=T.tanh
     )
 
     # classify the values of the fully-connected sigmoidal layer
     #layer3 = LogisticRegression(input=layer2.output, n_in=500, n_out=10)
     #layer3 = LogisticRegression(input=layer2.output, n_in=500, n_out=2)
-    layer4 = LogisticRegression(input=layer3.output, n_in=400, n_out=21)
+    layer6 = LogisticRegression(input=layer5.output, n_in=2, n_out=2)
+    #layer4 = LogisticRegression(input=layer3.output, n_in=400, n_out=5)
 
     # the cost we minimize during training is the NLL of the model
     #cost = layer3.negative_log_likelihood(y)
-    cost = layer4.negative_log_likelihood(y)
+    cost = layer6.negative_log_likelihood(y)
 
     # create a function to compute the mistakes that are made by the model
     test_model = theano.function(
         [index],
-        layer4.errors(y),
+        layer6.errors(y),
         givens={
             x: test_set_x[index * batch_size: (index + 1) * batch_size],
             y: test_set_y[index * batch_size: (index + 1) * batch_size]
@@ -251,7 +305,7 @@ def evaluate_lenet5(learning_rate=0.1, n_epochs=2,
 
     validate_model = theano.function(
         [index],
-        layer4.errors(y),
+        layer6.errors(y),
         givens={
             x: valid_set_x[index * batch_size: (index + 1) * batch_size],
             y: valid_set_y[index * batch_size: (index + 1) * batch_size]
@@ -260,8 +314,9 @@ def evaluate_lenet5(learning_rate=0.1, n_epochs=2,
 
     # create a list of all model parameters to be fit by gradient descent
     #params = layer4.params + layer3.params + layer2.params + layer1.params + layer0.params
-    #params = layer4.params + layer3.params + layer2.params + layer1.params + layer0.params
-    params = layer4.params + layer3.params + layer1.params + layer0.params
+    params = layer6.params + layer5.params + layer4.params + layer3.params + layer2.params + layer1.params + layer0.params
+    #params = layer5.params + layer4.params + layer3.params + layer1.params + layer0.params
+    #params = layer4.params + layer3.params + layer1.params + layer0.params
 
     # create a list of gradients for all model parameters
     grads = T.grad(cost, params)
@@ -316,11 +371,11 @@ def evaluate_lenet5(learning_rate=0.1, n_epochs=2,
         for minibatch_index in xrange(n_train_batches):
 
             iter = (epoch - 1) * n_train_batches + minibatch_index
-            print iter
-            if iter % 100 == 0:
+            #print iter
+            if iter % 50 == 0:
                 print 'training @ iter = ', iter
             cost_ij = train_model(minibatch_index)
-
+            print cost_ij
             if (iter + 1) % validation_frequency == 0:
 
                 # compute zero-one loss on validation set
@@ -357,30 +412,6 @@ def evaluate_lenet5(learning_rate=0.1, n_epochs=2,
                     output = open('../data/layer0.pkl', 'wb')
                     cPickle.dump(layer0, output,protocol=-1)
                     output.close()
-
-                    output = open('../data/layer1.pkl', 'wb')
-                    cPickle.dump(layer1, output,protocol=-1)
-                    output.close()
-
-                    # output = open('../data/layer2.pkl', 'wb')
-                    # cPickle.dump(layer2, output,protocol=-1)
-                    # output.close()
-
-                    output = open('../data/layer3.pkl', 'wb')
-                    cPickle.dump(layer3, output,protocol=-1)
-                    output.close()
-
-                    output = open('../data/layer4.pkl', 'wb')
-                    cPickle.dump(layer4, output,protocol=-1)
-                    output.close()
-                    
-                    # save the best model
-                    # with open('best_model.pkl', 'w') as f:
-                    #     cPickle.dump(layer0, f)                                                
-                    #     cPickle.dump(layer1, f)                        
-                    #     cPickle.dump(layer2, f)                        
-                    #     cPickle.dump(layer3, f)
-                    #     cPickle.dump(layer4, f)
 
             if patience <= iter:
                 done_looping = True
@@ -495,9 +526,15 @@ def predict():
     #print a.shape
     
     x = T.matrix('x')   # the data is presented as rasterized images
+    # predict = theano.function(
+    #     inputs = [x],
+    #     outputs=layer3.output
+    # )
+
+    #layer0_input = x.reshape((batch_size, 3, 64, 64))
     predict = theano.function(
-        inputs = [x],
-        outputs=layer3.output
+        inputs = [layer0.input],
+        outputs=layer4.y_pred
     )
     # givens = { x : train_set_x[0] }
     #train_set_x = train_set_x[0:400]
@@ -508,7 +545,7 @@ def predict():
     #print predicted_values
     return "fffff"
 
-
+    """
     max_similarity = 0
     max_similarity_pos = -1
     #for i in xrange(1,len(train_set_x)):
@@ -521,20 +558,9 @@ def predict():
 
     fe.reconstructImage(X_original[max_similarity_pos]).show()
 
-    #a = a.flatten(order='F')
-    # a = a * 256
-    # a = numpy.array(a,dtype=numpy.uint8)
-
-    #b = b.flatten(order='F')
-    # b = b * 256
-    # b = numpy.array(b,dtype=numpy.uint8)
-
-    # a = get_input([a])
-    # b = get_input([b])
-
     print a.shape
     print b.shape
-    print cosine_distance(a, b)
+    print cosine_distance(a, b)"""
 
     # #print get_input(test_set_x[0:1]).sum()
 
@@ -542,8 +568,8 @@ def predict():
     # print predicted_values
 
 if __name__ == '__main__':
-    #evaluate_lenet5()
-    predict()
+    evaluate_lenet5()
+    #predict()
 
 
 def experiment(state, channel):

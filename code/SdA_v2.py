@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
  This tutorial introduces stacked denoising auto-encoders (SdA) using Theano.
 
@@ -39,9 +40,10 @@ import theano
 import theano.tensor as T
 from theano.tensor.shared_randomstreams import RandomStreams
 
-from logistic_sgd import LogisticRegression, load_data
+from logistic_sgd_test import LogisticRegression, load_data
 from mlp import HiddenLayer
 from dA import dA
+import cPickle
 
 
 # start-snippet-1
@@ -63,7 +65,8 @@ class SdA(object):
 		n_ins=784,
 		hidden_layers_sizes=[500, 500],
 		n_outs=10,
-		corruption_levels=[0.1, 0.1]
+		corruption_levels=[0.1, 0.1],
+		data_path = None
 	):
 		""" This class is made to support a variable number of layers.
 
@@ -94,6 +97,7 @@ class SdA(object):
 		self.dA_layers = []
 		self.params = []
 		self.n_layers = len(hidden_layers_sizes)
+		self.data_path = data_path
 
 		assert self.n_layers > 0
 
@@ -158,6 +162,7 @@ class SdA(object):
 						  W=sigmoid_layer.W,
 						  bhid=sigmoid_layer.b)
 			self.dA_layers.append(dA_layer)
+
 		# end-snippet-2
 		# We now need to add a logistic layer on top of the MLP
 		self.logLayer = LogisticRegression(
@@ -322,10 +327,73 @@ class SdA(object):
 
 		return train_fn, valid_score, test_score
 
+	def save_weights(self):
+		
+		# state = self.__getstate__()
 
-def test_SdA(finetune_lr=0.1, pretraining_epochs=15,
-			 pretrain_lr=0.001, training_epochs=1000,
-			 dataset='mnist.pkl.gz', batch_size=1):
+		# output = open(self.data_path + 'SdA_v2_state.pkl', 'wb')
+		# cPickle.dump(state, output,protocol=-1)
+		# output.close()
+
+		for i in range(0,len(self.dA_layers)):
+
+			output = open(self.data_path + 'dA_layer'+str(i)+'_W.pkl', 'wb')
+			#cPickle.dump(self.dA_layers[i].W, output,protocol=-1)
+			cPickle.dump(self.dA_layers[i].W.get_value(borrow=True), output,protocol=-1)
+			output.close()
+			
+			output = open(self.data_path + 'dA_layer'+str(i)+'_b.pkl', 'wb')
+			# cPickle.dump(self.dA_layers[i].b, output,protocol=-1)
+			cPickle.dump(self.dA_layers[i].b.get_value(borrow=True), output,protocol=-1)
+			output.close()
+
+	# def __getstate__(self):
+	# 	""" Return state sequence."""
+		
+	# 	#check if we're using ubc_AI.classifier wrapper, 
+	# 	#adding it's params to the state
+	# 	if hasattr(self, 'orig_class'):
+	# 		superparams = self.get_params()
+	# 		#now switch to orig. class (MetaCNN)
+	# 		oc = self.orig_class
+	# 		cc = self.__class__
+	# 		self.__class__ = oc
+	# 		params = self.get_params()
+	# 		for k, v in superparams.iteritems():
+	# 			params[k] = v
+	# 		self.__class__ = cc
+	# 	else:
+	# 		params = self.get_params()  #sklearn.BaseEstimator
+	# 	if hasattr(self, 'cnn'):
+	# 		weights = [p.get_value() for p in self.cnn.params]
+	# 	elif hasattr(self, 'SdA_v2'):
+	# 		weights = [p.get_value() for p in self.gparams]
+	# 	else:
+	# 		weights = []
+	# 	print 'params'
+	# 	state = (params, weights)
+	# 	return state
+
+	def load_weights(self):
+
+		for i in range(0,len(self.dA_layers)):
+			pkl_file = open(self.data_path + 'dA_layer'+str(i)+'_W.pkl', 'rb')
+			self.dA_layers[i].W = cPickle.load(pkl_file)
+
+			self.dA_layers[i].W = theano.shared(numpy.asarray(self.dA_layers[i].W ,
+				dtype=theano.config.floatX),
+				borrow=True)
+			
+			pkl_file = open(self.data_path + 'dA_layer'+str(i)+'_b.pkl', 'rb')
+			self.dA_layers[i].b = cPickle.load(pkl_file)
+
+			self.dA_layers[i].b = theano.shared(numpy.asarray(self.dA_layers[i].b,
+				dtype=theano.config.floatX),
+				borrow=True)
+
+def test_SdA(finetune_lr=0.1, pretraining_epochs=2,
+			pretrain_lr=0.001, training_epochs=2,
+			dataset='mnist.pkl.gz', batch_size=1):
 	"""
 	Demonstrates how to train and test a stochastic denoising autoencoder.
 
@@ -348,6 +416,11 @@ def test_SdA(finetune_lr=0.1, pretraining_epochs=15,
 	:param dataset: path the the pickled dataset
 
 	"""
+	
+	data_path = '/Applications/MAMP/htdocs/DeepLearningTutorials/data/'
+	# Use the following command if you want to run the dA in production
+	# THEANO_FLAGS='floatX=float32,device=gpu0,nvcc.fastmath=True,cuda.root=/usr/local/cuda,mode=FAST_RUN' python SdA_v2.py
+	#data_path = '/home/ubuntu/DeepLearningTutorials/data/'
 
 	datasets = load_data(dataset)
 
@@ -364,12 +437,22 @@ def test_SdA(finetune_lr=0.1, pretraining_epochs=15,
 	numpy_rng = numpy.random.RandomState(89677)
 	print '... building the model'
 	# construct the stacked denoising autoencoder class
+	# sda = SdA(
+	# 	numpy_rng=numpy_rng,
+	# 	n_ins=128 * 128,
+	# 	hidden_layers_sizes=[1000, 1000],
+	# 	n_outs=21,
+	# 	data_path=data_path
+	# )
+
 	sda = SdA(
 		numpy_rng=numpy_rng,
-		n_ins=28 * 28,
-		hidden_layers_sizes=[1000, 1000, 1000],
-		n_outs=10
+		n_ins=128 * 128 * 3,
+		hidden_layers_sizes=[1000, 1000],
+		n_outs=3,
+		data_path=data_path
 	)
+
 	# end-snippet-3 start-snippet-4
 	#########################
 	# PRETRAINING THE MODEL #
@@ -399,6 +482,28 @@ def test_SdA(finetune_lr=0.1, pretraining_epochs=15,
 	print >> sys.stderr, ('The pretraining code for file ' +
 						  os.path.split(__file__)[1] +
 						  ' ran for %.2fm' % ((end_time - start_time) / 60.))
+
+	from utils import tile_raster_images
+
+	try:
+		import PIL.Image as Image
+	except ImportError:
+		import Image
+
+	# image = Image.fromarray(tile_raster_images(
+	#     X=sda.dA_layers[0].W.get_value(borrow=True).T,
+	#     img_shape=(128, 128), tile_shape=(10, 10),
+	#     tile_spacing=(1, 1)))
+	
+	# print sda.dA_layers[1].W.get_value(borrow=True).T.shape
+	# print sda.dA_layers[0].W.get_value(borrow=True).T.shape
+
+	# image = Image.fromarray(tile_raster_images(
+	#     X=sda.dA_layers[1].W.get_value(borrow=True).T,
+	#     img_shape=(36, 36), tile_shape=(10, 10),
+	#     tile_spacing=(1, 1)))
+	# image.save('filters_corruption_30.png')
+
 	# end-snippet-4
 	########################
 	# FINETUNING THE MODEL #
@@ -484,6 +589,98 @@ def test_SdA(finetune_lr=0.1, pretraining_epochs=15,
 						  os.path.split(__file__)[1] +
 						  ' ran for %.2fm' % ((end_time - start_time) / 60.))
 
+
+	# x = T.matrix('x')
+	# index_1 = T.lscalar()    # index to a [mini]batch
+	# index_2 = T.lscalar()    # index to a [mini]batch
+	# getHV = sda.dA_layers[0].get_hidden_values(x)
+	# getHiddenValues = theano.function(
+	#     [index_1,index_2],
+	#     getHV,
+	#     givens={
+	#         x: train_set_x[index_1:index_2]
+	#     }
+	# )
+	# print getHiddenValues(0,len(train_set_x.get_value(borrow=True))).shape
+	
+	# da1output = T.matrix('da1output')
+	# getHV2 = sda.dA_layers[1].get_hidden_values(da1output)
+	# getHiddenValues2 = theano.function(
+	#     [da1output],
+	#     getHV2
+	# )
+	# #print getHiddenValues2(getHiddenValues(0,1)).shape
+	# X = getHiddenValues2(getHiddenValues(0,len(train_set_x.get_value(borrow=True))))
+
+	sda.save_weights()
+
+	# sda2 = SdA(
+	# 	numpy_rng=numpy_rng,
+	# 	n_ins=128 * 128,
+	# 	hidden_layers_sizes=[1000, 1000],
+	# 	n_outs=21,
+	# 	data_path=data_path
+	# )
+
+	sda2 = SdA(
+		numpy_rng=numpy_rng,
+		n_ins=128 * 128 * 3,
+		hidden_layers_sizes=[1000, 1000],
+		n_outs=3,
+		data_path=data_path
+	)
+
+	sda2.load_weights()
+	#print sda2.dA_layers[1].W.get_value(borrow=True).shape
+	x = T.matrix('x')
+	index_1 = T.lscalar()    # index to a [mini]batch
+	index_2 = T.lscalar()    # index to a [mini]batch
+	getHV = sda2.dA_layers[0].get_hidden_values(x)
+	getHiddenValues = theano.function(
+		[index_1,index_2],
+		getHV,
+		givens={
+			x: train_set_x[index_1:index_2]
+		}
+	)
+
+	#print getHiddenValues(0,len(train_set_x.get_value(borrow=True))).shape
+	print getHiddenValues(0,1)
+	
+	da1output = T.matrix('da1output')
+	getHV2 = sda2.dA_layers[1].get_hidden_values(da1output)
+	getHiddenValues2 = theano.function(
+		[da1output],
+		getHV2
+	)
+	#print getHiddenValues2(getHiddenValues(0,1)).shape
+	X = getHiddenValues2(getHiddenValues(0,len(train_set_x.get_value(borrow=True))))
+	print X.shape
+
+	# print X.shape
+	# da2output = T.matrix('da2output')
+	# getHV3 = sda.dA_layers[2].get_hidden_values(da2output)
+	# getHiddenValues3 = theano.function(
+	#     [da2output],
+	#     getHV3
+	# )
+	# print getHiddenValues3([getHiddenValues2(0,1)])
+
+
+	from fetex_image import FetexImage
+	pkl_file = open(data_path + 'im_index.pkl', 'rb')
+	im_index = cPickle.load(pkl_file)
+
+	fe = FetexImage(verbose=True,support_per_class=10000,data_path=data_path, dataset='categories', mode='RGB')
+	fe.im_index = im_index
+	
+	# print im_index[0]
+	# print im_index[1]
+	#X_compressed = getHiddenValues(0,100)
+	X_compressed = X
+	#print X_compressed.shape
+	#fe.dimReductionSdA(X)
+	fe.similarImages(X_compressed)
 
 if __name__ == '__main__':
 	test_SdA()

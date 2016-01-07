@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-#from __future__ import division
+from __future__ import division
 import math
 from PIL import Image
 from os import listdir
@@ -29,6 +29,9 @@ from scipy.misc import imread
 from scipy.signal.signaltools import correlate2d as c2d
 import math
 from slugify import slugify
+#from SdA_v2 import SdA
+#from SdA import SdA
+#from SdA_v2 import SdA
 from multiprocessing import Process, Pool, Lock, Manager,Queue
 import multiprocessing
 import copy_reg
@@ -60,6 +63,7 @@ class FetexImage(object):
 	model_name = 'images'
 	support_per_class = None
 	data_path = None
+	#mode = 'L'
 	mode = 'RGB'
 	im_index = []
 	dataset = None
@@ -69,6 +73,7 @@ class FetexImage(object):
 	imlist = []
 	items_list = {}
 	lock = None
+	#imlist = manager.list()
 
 	"""docstring for FetexImage"""
 	def __init__(self,images=[],verbose = False,support_per_class = None, data_path = None,mode = None,dataset = None, classes = []):
@@ -119,28 +124,24 @@ class FetexImage(object):
 						print e
 					
 					try:
-
 						if im_aux.shape[2] == 3:
 							bn_parsed = os.path.basename(im_path).split("_")
 							im_id = int(bn_parsed[0])
-							#print im_id
 							#Ignore potential duplicates
-							#if im_id not in self.im_index:
-							if im_id not in im_index:
+							if im_id not in self.im_index:
 								im_aux = self.scale_and_crop_img(im)
+
 								# This is for multiprocessing
 								im_index.append(im_id)
 								imlist.append(np.asarray(im_aux))
 
 								# Uncomment this if you are not using multiprocessing
-								# self.im_index.append(im_id)
-								# self.imlist.append(np.asarray(im_aux))
-								#self.imlist.append(im_aux)
+								#self.im_index.append(im_id)
+								#self.imlist.append(np.asarray(im_aux))
 						else:
 							print "invalid image: {} size:{}".format(im.filename, im_aux.shape)
 		
 					except Exception, e:
-						#raise e
 						print e
 	
 			# if self.verbose:
@@ -148,56 +149,31 @@ class FetexImage(object):
 			# 	sys.stdout.flush()
 
 			j += 1
-	
-	def stop_position_per_cpu(self,num_items):
-		#Evently distribute the workload of finding similar image amongst all the CPU's
+			# if j == 30:
+			# 	break
+		
+	def load_images_parallel(self,im_paths):
+		
 		num_cpus = multiprocessing.cpu_count()
-
-		num_iter = 0
-		for i in range(0,num_items):
-			num_iter = num_iter + (num_items - i)
-
-		iter_per_cpu = int(math.ceil(num_iter / num_cpus)) + 1
-
-		stop_push = []
-		num_iter_i = 0
-		for i in range(0,num_items):
-			num_iter_i = num_iter_i + (num_items - i)
-			if num_iter_i > iter_per_cpu:
-				stop_push.append(i)
-				num_iter_i = 0
-
-		if stop_push[-1] != num_items:
-			stop_push.append(num_items)
+		num_items = len(im_paths)
+		items_per_cpu = int(math.ceil(num_items / num_cpus))
 
 		if self.verbose:
-			print "num_cpus: {} num_items:{} iter_per_cpu:{}".format(num_cpus,num_items,iter_per_cpu)
+			print "num_cpus: {} num_items:{} items_per_cpu:{}".format(num_cpus,num_items,items_per_cpu)
+			start_time = timeit.default_timer()
 
-		return stop_push
-
-	def load_images_parallel(self,im_paths):
-		# Load the image in parallel using as many cpus as possible
-		spcpu = self.stop_position_per_cpu(len(im_paths)) # get number of cpu available
-
-		start_time = timeit.default_timer()
+		#lock = Lock()
 		manager = Manager()
 		imlist = manager.list()
 		im_index = manager.list()
 
-		# Start all the processes with evently distributed load
 		p = []
-		for i in xrange(0,len(spcpu)):
-
-			stop_i = spcpu[i]
-			start_i = 0 if i == 0 else spcpu[i-1] + 1
-
-			print "start_i:{} stop_i:{}".format(start_i,stop_i)
-
-			batch = im_paths[start_i:stop_i]
+		for i in xrange(0,num_cpus):
+			batch = im_paths[i*items_per_cpu:(i+1)*items_per_cpu]
 			p.append(Process(target=self.load_images, args=(batch,imlist,im_index)))
 			p[i].start()
 
-		for i in xrange(0,len(spcpu)):
+		for i in xrange(0,num_cpus):
 			p[i].join()
 
 		imlist = list(imlist)
@@ -212,14 +188,13 @@ class FetexImage(object):
 	
 	def calculate_average_image(self,imlist):
 		"""Calculates the average image given PIL Image list"""
-		
+
+		w,h=imlist[0].size
 		N=len(imlist)
 		
 		if self.mode == 'RGB':
-			w,h,c=imlist[0].shape
 			arr=np.zeros((h,w,3),theano.config.floatX)
-		else:
-			w,h=imlist[0].shape		
+		else:		
 			arr=np.zeros((h,w),theano.config.floatX)
 
 		for im in imlist:
@@ -249,14 +224,14 @@ class FetexImage(object):
 
 		if img.size[0] < img.size[1]:
 			basewidth = self.width
-			wpercent = (basewidth/float(img.size[0]))
-			hsize = int(float(img.size[1])*float(wpercent))
+			wpercent = int((basewidth/float(img.size[0])))
+			hsize = int((float(img.size[1])*float(wpercent)))
 			img = img.resize((basewidth,hsize), Image.ANTIALIAS)
 
 		else:
 			baseheight = self.height
-			hpercent = (baseheight/float(img.size[1]))
-			wsize = int(float(img.size[0])*float(hpercent))
+			hpercent = int((baseheight/float(img.size[1])))
+			wsize = int((float(img.size[0])*float(hpercent)))
 			img = img.resize((wsize,baseheight), Image.ANTIALIAS)
 
 		if self.mode == 'L':
@@ -264,13 +239,12 @@ class FetexImage(object):
 
 		half_the_width = int(img.size[0] / 2)
 		half_the_height = int(img.size[1] / 2)
-
 		img = img.crop(
     	(
-	        half_the_width - (self.width / 2),
-        	half_the_height - (self.height / 2),
-        	half_the_width + (self.width / 2),
-        	half_the_height + (self.height / 2)
+	        half_the_width - int(self.width / 2),
+        	half_the_height - int(self.height / 2),
+        	half_the_width + int(self.width / 2),
+        	half_the_height + int(self.height / 2)
     	)
 		)
 
@@ -498,8 +472,22 @@ class FetexImage(object):
 		""" Create Train, validation and test set"""
 
 		print "Size of the original images"
+		# arr = X[3]
+		# print arr.shape
+		# aux = []
+		# aux = [arr]
+		# aux = np.array(aux,dtype=np.uint8)
+		# aux = aux.transpose(0, 3, 1, 2)
+		# print aux[0].shape
+		# print aux.transpose(0, 3, 1, 2).shape
 
+		# #arr = arr * 256
+		# arr = aux[0] * 256
+		# arr = np.array(arr,dtype=np.uint8)
+		# Image.fromarray(arr,mode="RGB").show()
+		
 		X = np.asarray(X, dtype=theano.config.floatX)
+		print X.shape
 		
 		train_length = int(round(len(X) * 0.60))
 		valid_length = int(round(len(X) * 0.20))
@@ -509,7 +497,8 @@ class FetexImage(object):
 		X_valid = X[train_length: (train_length + valid_length)]
 		X_test = X[-test_length:]
 
-		# sample = X_train[0].reshape(64,64)
+		#sample = X_train[0].reshape(64,64)
+		
 
 		# X_train = X_train.transpose(0, 3, 1, 2)
 		# X_valid = X_valid.transpose(0, 3, 1, 2)
@@ -575,6 +564,7 @@ class FetexImage(object):
 		cPickle.dump(test_set, output,protocol=-1)
 		output.close()
 		
+		#return train_set,valid_set,test_set,input
 		return train_set,valid_set,test_set
 
 	def reconstructImage(self,arr):
@@ -600,18 +590,18 @@ class FetexImage(object):
 
 		return im
 
-	def ImagePipeline(self,cnn_pipe = False, batch_index = None):
+	def ImagePipeline(self,cnn_pipe = False):
 		""" This is the main pipeline to process the images"""
 		
-		if self.verbose:
-			print "...createFolderStructure"
+		# if self.verbose:
+		# 	print "...createFolderStructure"
 
-		self.createFolderStructure()
+		# self.createFolderStructure()
 
-		if self.verbose:
-			print "...downloadImages"
+		# if self.verbose:
+		# 	print "...downloadImages"
 
-		self.downloadImages()
+		# self.downloadImages()
 
 		if self.verbose:
 			print "...binarize_classes"
@@ -628,17 +618,16 @@ class FetexImage(object):
 				
 		# Uncomment this if you just want to use one cpu		
 		#imlist = self.load_images(im_paths,cnn_pipe)
-		#self.load_images(im_paths,[],[])
+		#self.load_images(im_paths,cnn_pipe,[],[])
 		#imlist = self.imlist
 
 		imlist, self.im_index = self.load_images_parallel(im_paths)
-		#print len(imlist)
 
 		# Sort the list by index so we don't have to do as many iteration in finding similar
-		#if not cnn_pipe:
-		zipped = zip(self.im_index, imlist)
-		zipped_sorted = sorted(zipped, key=lambda x: x[0])
-		self.im_index , imlist = zip(*zipped_sorted)
+		if not cnn_pipe:
+			zipped = zip(self.im_index, imlist)
+			zipped_sorted = sorted(zipped, key=lambda x: x[0])
+			self.im_index , imlist = zip(*zipped_sorted)
 
 		average_image = None
 		if cnn_pipe:
@@ -649,8 +638,6 @@ class FetexImage(object):
 		if self.verbose:
 			print "\n...data_augmentation_and_vectorization\n"
 		
-		#print imlist
-
 		X,Y = self.data_augmentation_and_vectorization(imlist,lb,im_labels,average_image)
 
 		output = open( self.data_path + 'im_index.pkl', 'wb')
@@ -660,18 +647,8 @@ class FetexImage(object):
 		if self.verbose:
 			print "...dimReductionSdA"
 		
-		X = self.dimReductionSdA(X)
-		# print X[0][0:3]
-		# print X[1][0:3]
-		#X = self.dimReduction(X)
-
-		output = open( self.data_path + 'X_compressed_'+str(batch_index)+'.pkl', 'wb')
-		cPickle.dump(X, output,protocol=-1)
-		output.close()
-
-		output = open( self.data_path + 'im_index_' + str(batch_index) + '.pkl', 'wb')
-		cPickle.dump(self.im_index, output,protocol=-1)
-		output.close()
+		#X = self.dimReductionSdA(X)
+		X = self.dimReduction(X)
 
 		if cnn_pipe:
 			if self.verbose:
@@ -679,6 +656,20 @@ class FetexImage(object):
 			train_set,valid_set,test_set =  self.create_train_validate_test_sets(X, Y)
 			return train_set,valid_set,test_set
 		else:
+
+			# output = open( self.data_path + 'X.pkl', 'wb')
+			# cPickle.dump(X, output,protocol=-1)
+			# output.close()
+
+			# pkl_file = open( self.data_path + 'X.pkl', 'rb')
+			# X = cPickle.load(pkl_file)
+
+			# output = open( self.data_path + 'im_index.pkl', 'wb')
+			# cPickle.dump(self.im_index, output,protocol=-1)
+			# output.close()
+
+			# pkl_file = open( self.data_path + 'im_index.pkl', 'rb')
+			# self.im_index = cPickle.load(pkl_file)
 
 			if self.verbose:
 				print "\n...similarImages\n"
@@ -769,68 +760,29 @@ class FetexImage(object):
 		i = 0
 		for im in images:
 			# If file is not in the file path, then download from the url
+			#print im
 			if not os.path.exists(im['file_path']):
 				try:
 					#print "i:{} url:{}".format(i,im['url'])
 					urllib.urlretrieve(im['url'], im['file_path'] )
 				except Exception, e:
 					print e
+
 			i += 1
+			# else:
+			# 	print "already downloaded"
 
 	def cosine_distance(self,a, b):
 		dot_product =  np.dot(a,b.T)
 		cosine_distance = dot_product / (LA.norm(a) * LA.norm(b))
 		return cosine_distance
 
-	def load_SdA_weights(self,num_SdA_layer):
-		SdA_layers_W = []
-		SdA_layers_b = []
-
-		for i in range(0,num_SdA_layer):
-			pkl_file = open(self.data_path + 'dA_layer'+str(i)+'_W.pkl', 'rb')
-			W_aux = cPickle.load(pkl_file)
-			W_aux = np.asarray(W_aux, dtype=theano.config.floatX)
-			SdA_layers_W.append(W_aux)
-			
-			pkl_file = open(self.data_path + 'dA_layer'+str(i)+'_b.pkl', 'rb')
-			b_aux = cPickle.load(pkl_file)
-			b_aux = np.asarray(b_aux, dtype=theano.config.floatX)
-			SdA_layers_b.append(b_aux)
-
-		return SdA_layers_W, SdA_layers_b
-
 	def dimReductionSdA(self,X):
+		from SdA_v2 import SdA
 		import theano
 		import theano.tensor as T
 		from scipy.special import expit
 
-		if self.verbose:
-			print "... flattening "
-
-		X = map(self.flaten_aux, X)		
-		X = np.asarray(X, dtype=theano.config.floatX)
-
-		# Get activations unit for layer 0
-		#expit = sigmoid
-		SdA_layers_W, SdA_layers_b = self.load_SdA_weights(2)
-		W_0 = SdA_layers_W[0]
-		b_0 =  SdA_layers_b[0]
-
-		print "X shape: {} W_0 shape:{} b_0 shape:{}".format(X.shape,W_0.shape,b_0.shape)
-
-		da1output = expit(np.dot(X,W_0) + b_0)
-
-		W_1 = SdA_layers_W[1]
-		b_1 =  SdA_layers_b[1]
-
-		print "da1output shape: {} W_0 shape:{} b_0 shape:{}".format(da1output.shape,W_1.shape,b_1.shape)
-
-		da2output = expit(np.dot(da1output,W_1) + b_1)
-		#print da2output[0][0:10]
-		return da2output
-		
-		"""
-		from SdA_v2 import SdA
 		#uncomment this to check duplicates
 		# seen = set()
 		# uniq = []
@@ -842,56 +794,62 @@ class FetexImage(object):
 		# 		print "Repeated image_id: {}".format(x)
 		# print self.im_index
 		# print uniq
-		numpy_rng = np.random.RandomState(89677)
 
+		if self.verbose:
+			print "... flattening "
+		
+		
+		X = map(self.flaten_aux, X)		
+		X = np.asarray(X, dtype=theano.config.floatX)
+
+		print X[0].shape
+
+		numpy_rng = np.random.RandomState(89677)
 		sda2 = SdA(
 			numpy_rng=numpy_rng,
-			n_ins=128 * 128 * 3,
+			n_ins=128 * 128,
 			hidden_layers_sizes=[1000, 1000],
-			n_outs=21,
+			n_outs=2,
 			data_path=self.data_path
 		)
 
-		#print X.get_value(borrow = True).shape
-		#sda2.load_weights()
-
-		W_0 = sda2.dA_layers[0].W.get_value(borrow=True)
-		b_0 =  sda2.dA_layers[0].b.get_value(borrow=True)
-
-		W_0 = np.asarray(W_0, dtype=theano.config.floatX)
-		b_0 = np.asarray(b_0, dtype=theano.config.floatX)
-		
-		print "X shape: {} W_0 shape:{} b_0 shape:{}".format(X.shape,W_0.shape,b_0.shape)
-
-		#print expit(np.dot(X,W_0) + b_0 )
-		da1output = expit(np.dot(X,W_0) + b_0)
-		#print da1output
-
-		W_1 = sda2.dA_layers[1].W.get_value(borrow=True)
-		b_1 =  sda2.dA_layers[1].b.get_value(borrow=True)
-
-		W_1 = np.asarray(W_1, dtype=theano.config.floatX)
-		b_1 = np.asarray(b_1, dtype=theano.config.floatX)
-
-		print "da1output shape: {} W_0 shape:{} b_0 shape:{}".format(da1output.shape,W_1.shape,b_1.shape)
-		# print da1output.shape
-		# print W_1.shape
-		# print b_1.shape
-		#print expit(np.dot(X,W_0) + b_0 )
-		da2output = expit(np.dot(da1output,W_1) + b_1)
-		#print expit(np.dot(X,W_0 + b_0))
-		return da2output
-		#print da2output[0][0:10]"""
-
-		#print da2output
-		# X = da2output
-		# print X
-		# return X
-		#return T.nnet.sigmoid(T.dot(input, self.W) + self.b)
-		"""
 		X = theano.shared(np.asarray(X,
 			dtype=theano.config.floatX),
 			borrow=True)
+		
+		#print X.get_value(borrow = True)
+		sda2.load_weights()
+
+		#print sda2.dA_layers[1].W.get_value(borrow=True)
+		#print sda2.dA_layers[1].b.get_value(borrow=True)
+		# Get activations unit for layer 0
+		#expot = sigmoid
+		# W_0 = sda2.dA_layers[0].W.get_value(borrow=True)
+		# b_0 =  sda2.dA_layers[0].b.get_value(borrow=True)
+
+		# W_0 = np.asarray(W_0, dtype=theano.config.floatX)
+		# b_0 = np.asarray(W_0, dtype=theano.config.floatX)
+		# print X.shape
+		# print theano.config.floatX
+		# print W_0.shape
+		# print b_0.shape
+		# #print expit(np.dot(X,W_0) + b_0 )
+		# da1output = expit(np.dot(X,W_0))
+		# print da1output
+
+		# W_1 = sda2.dA_layers[1].W.get_value(borrow=True)
+		# b_1 =  sda2.dA_layers[1].b.get_value(borrow=True)
+
+		# W_1 = np.asarray(W_1, dtype=theano.config.floatX)
+		# b_1 = np.asarray(W_1, dtype=theano.config.floatX)
+		# print da1output.shape
+		# print W_1.shape
+		# print b_1.shape
+		# #print expit(np.dot(X,W_0) + b_0 )
+		# da2output = expit(np.dot(da1output,W_1 + b_1))
+		# #print expit(np.dot(X,W_0 + b_0))
+		# X = da2output
+		# return X
 
 		x = T.matrix('x')
 		index_1 = T.lscalar()    # index to a [mini]batch
@@ -904,8 +862,8 @@ class FetexImage(object):
 				x: X[index_1:index_2]
 			}
 		)
-		#print X.get_value()[0].shape
-		#print getHiddenValues(0,len(X.get_value(borrow=True)))
+		# print X.get_value()[0].shape
+		print getHiddenValues(0,len(X.get_value(borrow=True)))
 		
 		da1output = T.matrix('da1output')
 		getHV2 = sda2.dA_layers[1].get_hidden_values(da1output)
@@ -913,24 +871,25 @@ class FetexImage(object):
 			[da1output],
 			getHV2
 		)
-
 		#print getHiddenValues2(getHiddenValues(0,1)).shape
 		X = getHiddenValues2(getHiddenValues(0,len(X.get_value(borrow=True))))
-		print X[0][0:10]
-		return X"""
+
+		#print X[0]
+		print X.shape
+		return X
 
 	def dimReduction(self,X):
 
-		seen = set()
-		uniq = []
-		for x in self.im_index:
-			if x not in seen:
-				uniq.append(x)
-				seen.add(x)
-			else:
-				print "Repeated image_id: {}".format(x)
-		print len(self.im_index)
-		print len(uniq)
+		# seen = set()
+		# uniq = []
+		# for x in self.im_index:
+		# 	if x not in seen:
+		# 		uniq.append(x)
+		# 		seen.add(x)
+		# 	else:
+		# 		print "Repeated image_id: {}".format(x)
+		# # print self.im_index
+		# # print uniq
 
 		if self.verbose:
 			print "... flattening "
@@ -979,7 +938,6 @@ class FetexImage(object):
 		# # X = np.asarray(X)
 		start_time = timeit.default_timer()
 		
-		#pca = RandomizedPCA(n_components=676)
 		pca = RandomizedPCA(n_components=676)
 		pca.fit(X)
 		X = pca.transform(X)
@@ -993,9 +951,9 @@ class FetexImage(object):
 		print "Total variance kept = {}".format(sum(pca.explained_variance_ratio_))
 
 		# print X[0][0]
-		# output = open( self.data_path + 'pca_' + self.mode + '.pkl', 'wb')
-		# cPickle.dump(pca, output,protocol=-1)
-		# output.close()
+		output = open( self.data_path + 'pca_' + self.mode + '.pkl', 'wb')
+		cPickle.dump(pca, output,protocol=-1)
+		output.close()
 
 		# pkl_file = open( self.data_path + 'pca.pkl', 'rb')
 		# pca = cPickle.load(pkl_file)
@@ -1018,23 +976,19 @@ class FetexImage(object):
 
 		return X
 	
-	def appendToCSV(self,items_list,addHeader = True, file_name = '_data.csv',duplicates = False):
+	def appendToCSV(self,items_list,addHeader = True, file_name = '_data.csv'):
 		if self.verbose:
 			print "...appendToCSV file_name:{}".format(file_name)
 		
 		with open(self.data_path + self.model_name + file_name, 'wb') as csvfile:
 			
 			writer = csv.writer(csvfile, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
-			#writer = csv.writer(csvfile, delimiter=' ', quotechar='|', quoting=csv.QUOTE_MINIMAL)
 			#reader = csv.reader(csvfile_read, delimiter=',', quotechar='"')
 			if addHeader:
 				writer.writerow(['item_id_x' , 'item_id_y' , 'distance'])
 			
 			for item in items_list:
-				if not duplicates:
-					writer.writerow([item['item_id_x'], item['item_id_y'], item['distance']])
-				else:
-					writer.writerow([item])
+				writer.writerow([item['item_id_x'], item['item_id_y'], item['distance']])
 	
 	def concatenateCSVFiles(self,num_cpus):
 		csvfile_write = open(self.data_path + self.model_name + '_data.csv', 'wb')
@@ -1042,77 +996,27 @@ class FetexImage(object):
 		writer = csv.writer(csvfile_write, delimiter=' ', quotechar='|', quoting=csv.QUOTE_MINIMAL)
 
 		for i in xrange(0,num_cpus):
-			file_path = self.data_path + self.model_name +  '_data_'+str(i)+'.csv'
+			
 			if i == 0:
 				writer.writerow(['item_id_x' , 'item_id_y' , 'distance'])
 
-			with open(file_path, 'rb') as csvfile_read:
+			with open(self.data_path + self.model_name +  '_data_'+str(i)+'.csv', 'rb') as csvfile_read:
 				reader = csv.reader(csvfile_read, delimiter=',', quotechar='"')
 			
 				for row in reader:
 					writer.writerow([row[0], row[1], row[2]])
 
-			#Remove file
-			os.remove(file_path)
-
-	def concatenateXandIndex(self,classes):
-		X_compressed = []
-		im_index_all = []
-
-		for i in xrange(0,len(classes)):
-			x_path = self.data_path + 'X_compressed_' + str(i) + '.pkl'
-			index_path = self.data_path + 'im_index_' + str(i) + '.pkl'
-			if os.path.exists(x_path):
-
-				pkl_file = open(x_path, 'rb')
-				X = cPickle.load(pkl_file)
+	def similarImages2(self,X,duplicated_items,start_i,stop_i,cpu_index):
 	
-				pkl_file = open(index_path, 'rb')
-				im_index = cPickle.load(pkl_file)
-				im_index = list(im_index)
-	
-				for i in range(0,len(X)):
-					X_compressed.append(X[i])
-					im_index_all.append(im_index[i])
-				
-				os.remove(x_path)
-				os.remove(index_path)
+	#def similarImages2(self,X,cpu_index,items_per_cpu,num_items):
 
-		output = open(self.data_path + 'X_compressed.pkl', 'wb')
-		cPickle.dump(X_compressed, output,protocol=-1)
-		output.close()
-
-		output = open(self.data_path + 'im_index_all.pkl', 'wb')
-		cPickle.dump(im_index_all, output,protocol=-1)
-		output.close()
-
-	def concatenateDuplicatedItems(self,num_cpus):
-		duplicated_items = []
-		for i in xrange(0,num_cpus):
+		# start_i = items_per_cpu * i
+		# stop_i = items_per_cpu * (i + 1) if items_per_cpu * (i + 1) < num_items else num_items
 			
-			file_path = self.data_path + self.model_name +  '_duplicated_items_'+str(i)+'.csv'
-			
-			if os.path.exists(file_path):
-				with open(file_path, 'rb') as csvfile_read:
-					reader = csv.reader(csvfile_read, delimiter=',', quotechar='"')
-					for row in reader:
-						duplicated_items.append(int(row[0]))
-			
-				#Remove file
-				os.remove(file_path)
+		# if i != 0:
+		# 	start_i = start_i + 1
 
-		return duplicated_items
-
-	def similarImages2(self,X,start_i,stop_i,cpu_index):
-
-		"""
-		These features are binarized (fc6) and sparsified (fc8) 
-		for representation efficiency and compared using Hamming distance (fc6) and
-		cosine similarity (fc8), respectively.
-
-		"""
-
-		duplicated_items = []
+		# duplicated_items = []
 		items_list = []
 		# print "this is going to iterate for:{}".format(len(xrange(start_i,stop_i)))
 		for i in xrange(start_i,stop_i):
@@ -1136,32 +1040,83 @@ class FetexImage(object):
 				#d = dist.cityblock(a, b)
 
 				# Uncomment this if you want to use the euclidean distance
-				# if d == 0 and i != j:
-				# 	duplicated_items.append(self.im_index[j])
-
-				# if i == j or d == 0:
-				# 	d = -np.inf
-
-				# Uncomment this if you are going to use the cosine distance
-				if d == 1 and i != j:
-					#print "Im1 {} Im2 {}".format(self.im_index[i], self.im_index[j])
+				if d == 0 and i != j:
 					duplicated_items.append(self.im_index[j])
 
-				if i == j or d == 1:
+				if i == j or d == 0:
 					d = -np.inf
 
 				aux['item_id_x'] = self.im_index[i]
 				aux['item_id_y'] = self.im_index[j]
 				aux['distance'] = d
+				#q.put(aux)
 				items_list.append(aux)
-		#print len(duplicated_items)
-		self.appendToCSV(items_list,addHeader=False,file_name='_data_'+str(cpu_index)+'.csv',duplicates=False)
-		
-		print "cpu_index:{} num_iterations:{}".format(cpu_index,len(items_list))
 
-		if len(duplicated_items) > 0:
-			self.appendToCSV(duplicated_items,addHeader=False,file_name='_duplicated_items_'+str(cpu_index)+'.csv',duplicates=True)
+				#items_list.append(self.im_index[i])
+				#item_id_x[i] = self.im_index[i]
+				# item_id_x.append(self.im_index[i])
+				# item_id_y.append(self.im_index[j])
+				# d_arr.append(d)
+				#item_id_x[i] = self.im_index[i]
+				# lock.acquire()
+				#with self.lock:
+					#self.items_list[cpu_index].append(aux)
+					#self.items_list[cpu_index].append(d)
+				#	self.items_list.append(d)
+				#item_id_y.append(d)
+				#self.items_list[cpu_index].append(d)
+				#self.items_list.append(d)
+				# d_arr[index.value] = d
+				# item_id_x[index.value] = self.im_index[i]
+				# item_id_y[index.value] = self.im_index[j]
+
+				# d_arr[i] = d
+				# item_id_x[i] = self.im_index[i]
+				# item_id_y[i] = self.im_index[j]
+				# #print index.value
+				# index.value += 1
+				#q.put(aux)
+				#q.put(d)
+				#self.items_list[cpu_index].append(d)
+				# lock.release()
+				#items_list.append(1)
 			
+			# if self.verbose:
+			# 	sys.stdout.write("\r Process: {0}/{1}".format(i, len(X)))
+			# 	sys.stdout.flush()
+		#return items_list
+		#print self.items_list
+		#q.put_nowait(items_list)
+		#q.put(items_list)
+		#q.put([cpu_index] * 10000)
+		# q.put(items_list[0:100])
+		# q.put(items_list[100:200])
+		#print cpu_index
+		#print q.empty()
+		#return "allalalala"
+		self.appendToCSV(items_list,addHeader=False,file_name='_data_'+str(cpu_index)+'.csv')
+		return items_list
+	def get_all_queue_result(self,queue):
+
+		result_list = []
+		while not queue.empty():
+			print queue.get()
+			result_list.append(queue.get())
+
+		return result_list
+
+	def queue_get_all(self,q):
+		items = []
+		maxItemsToRetreive = 10
+		for numOfItemsRetrieved in range(0, maxItemsToRetreive):
+		    try:
+		        if numOfItemsRetrieved == maxItemsToRetreive:
+		            break
+		        items.append(q.get_nowait())
+		    except Empty, e:
+		        break
+		return items
+
 	def similarImages(self,X):
 
 		# X = self.dimReduction(X)
@@ -1173,29 +1128,142 @@ class FetexImage(object):
 
 		# min_max_scaler = preprocessing.MinMaxScaler(feature_range=(0,1), copy=True)
 		# X = min_max_scaler.fit_transform(X)
-		
-		if self.verbose:
-			print "... finding similar images"
 
+		#print "... finding similar images and appending to a .csv file"
+		print "... finding similar images"
 		start_time = timeit.default_timer()
-		spcpu = self.stop_position_per_cpu(len(X))
+
+		num_cpus = multiprocessing.cpu_count()
+		num_items = len(X)
+		items_per_cpu = int(math.ceil(num_items / num_cpus))
+
+		if self.verbose:
+			print "num_cpus: {} num_items:{} items_per_cpu:{}".format(num_cpus,num_items,items_per_cpu)
+			start_time = timeit.default_timer()
+
+		#lock = Lock()
+		manager = Manager()
+		#items_list = manager.list()
+		#items_list = multiprocessing.Array(typecode_or_type, size_or_initializer)
+		#items_list = multiprocessing.Array()
+		duplicated_items = []
 
 		p = []
-		for i in xrange(0,len(spcpu)):
+		for i in xrange(0,num_cpus):
+			#self.items_list[i] = []
+			start_i = items_per_cpu * i
+			stop_i = items_per_cpu * (i + 1) if items_per_cpu * (i + 1) < num_items else num_items
 			
-			stop_i = spcpu[i]
-			start_i = 0 if i == 0 else spcpu[i-1] + 1
+			if i != 0:
+				start_i = start_i + 1
 
 			print "start_i:{} stop_i:{}".format(start_i,stop_i)
-			p.append(Process(target=self.similarImages2, args=(X,start_i,stop_i,i)))
+
+			#p.append(Process(target=self.similarImages2, args=(X,item_id_x,item_id_y,d,duplicated_items,start_i,stop_i,i,index)))
+			p.append(Process(target=self.similarImages2, args=(X,duplicated_items,start_i,stop_i,i)))
 			p[i].start()
 
-		for i in xrange(0,len(spcpu)):
+		for i in xrange(0,num_cpus):
 			p[i].join()
 
 		#Concatenate csv files
-		self.concatenateCSVFiles(len(spcpu))
-		duplicated_items = self.concatenateDuplicatedItems(len(spcpu))
+		self.concatenateCSVFiles(num_cpus)
+		
+		if self.verbose:
+			#print "len items_list:{}".format(len(items_list))
+			end_time = timeit.default_timer()
+			elapsed_time = ((end_time - start_time))
+			print "Elapsed time {}s finding similar images".format(elapsed_time)
+
+
+		# if self.verbose:
+		# 	start_time = timeit.default_timer()
+
+		# d = np.asarray(d.get_obj())
+		"""
+		duplicated_items = []
+		items_list = []
+		for i in xrange(0,len(X)):
+			a = X[i]
+			#print a
+			# We just need to fill the upper diagonal
+			# Remember to uncomment this if you are not using the autoencoder
+			for j in xrange(i,len(X)):
+			#for j in xrange(0,len(X)):
+				aux = {'item_id_x' : None , 'item_id_y' : None , 'distance' : None}
+				b = X[j]
+				#uncomment this if you want to use the cosine distance
+				d = self.cosine_distance(a,b)
+				#Uncomment this if you want to use cross-correlate for 2D arrays http://docs.scipy.org/doc/scipy-0.16.0/reference/generated/scipy.signal.correlate2d.html
+				# c = c2d(a, b, mode='same')
+				# d = c.max()
+				#Uncomment this for euclidean distance
+				# d = dist.euclidean(a, b)
+				#d = dist.cityblock(a, b)
+
+				# Uncomment this if you want to use the euclidean distance
+				if d == 0 and i != j:
+					duplicated_items.append(self.im_index[j])
+
+				if i == j or d == 0:
+					d = -np.inf
+
+				aux['item_id_x'] = self.im_index[i]
+				aux['item_id_y'] = self.im_index[j]
+				aux['distance'] = d
+				items_list.append(aux)
+			
+			if self.verbose:
+				sys.stdout.write("\r Process: {0}/{1}".format(i, len(X)))
+				sys.stdout.flush()"""
+
+		duplicated_items = []
+		items_list = []
+		for i in xrange(0,len(X)):
+			a = X[i]
+			#print a
+			# We just need to fill the upper diagonal
+			# Remember to uncomment this if you are not using the autoencoder
+			for j in xrange(i,len(X)):
+				aux = {'item_id_x' : None , 'item_id_y' : None , 'distance' : None}
+			#for j in xrange(0,len(X)):
+				b = X[j]
+				#uncomment this if you want to use the cosine distance
+				d = self.cosine_distance(a,b)
+				#Uncomment this if you want to use cross-correlate for 2D arrays http://docs.scipy.org/doc/scipy-0.16.0/reference/generated/scipy.signal.correlate2d.html
+				# c = c2d(a, b, mode='same')
+				# d = c.max()
+				#Uncomment this for euclidean distance
+				# d = dist.euclidean(a, b)
+				#d = dist.cityblock(a, b)
+
+				# Uncomment this if you want to use the euclidean distance
+				if d == 0 and i != j:
+					duplicated_items.append(self.im_index[j])
+
+				if i == j or d == 0:
+					d = -np.inf
+
+				# Uncomment this if you are going to use the cosine distance
+				# if d == 1 and i != j:
+				# 	#print "Im1 {} Im2 {}".format(self.im_index[i], self.im_index[j])
+				# 	duplicated_items.append(self.im_index[j])
+
+				# if i == j or d == 1:
+				# 	d = -np.inf
+				#print d
+				#writer.writerow([self.im_index[i], self.im_index[j], d])
+
+				aux['item_id_x'] = self.im_index[i]
+				aux['item_id_y'] = self.im_index[j]
+				aux['distance'] = d
+				items_list.append(aux)
+			
+			if self.verbose:
+				sys.stdout.write("\r Process: {0}/{1}".format(i, len(X)))
+				sys.stdout.flush()
+		
+		self.appendToCSV(items_list)
 
 		if self.verbose:
 			#print "len items_list:{}".format(len(items_list))
@@ -1223,27 +1291,25 @@ class FetexImage(object):
 
 		print df.head()
 
-		#item_id = 47613
-		#item_id = 2218
-		# item_id = 47574
-		# i = self.im_index.index(item_id)
-		# # recommendations = df[df[item_id] > 0].sort_values(by=[item_id],ascending = False)[item_id][0:8].index.values.tolist()
-		# # print recommendations
-
-		# index_x = df.iloc[0:i,i].index
-		# index_y = df.iloc[i,i:df.index.values.size].index
-
-		# values_x = df.iloc[0:i,i].values
-		# values_y = df.iloc[i,i:df.index.values.size].values
-
-		# index = np.concatenate((index_x, index_y),axis=0)
-		# values = np.concatenate((values_x,values_y),axis=0)
-
-		# zipped = zip(index,values)
-		# zipped_sorted = sorted(zipped, key=lambda x: x[1])[::-1][0:8]
-		# index , values = zip(*zipped_sorted)
-		# recommendations = list(index)
+		item_id = 2218
+		i = self.im_index.index(2218)
+		# recommendations = df[df[item_id] > 0].sort_values(by=[item_id],ascending = False)[item_id][0:8].index.values.tolist()
 		# print recommendations
+
+		index_x = df.iloc[0:i,i].index
+		index_y = df.iloc[i,i:df.index.values.size].index
+
+		values_x = df.iloc[0:i,i].values
+		values_y = df.iloc[i,i:df.index.values.size].values
+
+		index = np.concatenate((index_x, index_y),axis=0)
+		values = np.concatenate((values_x,values_y),axis=0)
+
+		zipped = zip(index,values)
+		zipped_sorted = sorted(zipped, key=lambda x: x[1])[::-1][0:8]
+		index , values = zip(*zipped_sorted)
+		recommendations = list(index)
+		print recommendations
 
 		if self.verbose:
 			print "...storing to HDFS path : {}".format(self.data_path)
@@ -1419,70 +1485,47 @@ class FetexImage(object):
 			print "There are no image higher than the minimum threshold"
 
 	#def getSimilarItems(self,item_id = None,user_id = None, num_recommendations = 10, model_name = 'products'):
-	def getRecommendations(self,image_url, num_recommendations = 10, model_name = 'images'):
-		# This method gets n similar images given a image url. It downloads the image that we staged in our S3.
+	def getSimilarItems(self,image_url, num_recommendations = 10, model_name = 'images'):
 
-		# Preproces the image by applyning a reduced version of the method load_image.
-		file_path = self.data_path + 'file.jpg'
+		image_url = 'https://upload.wikimedia.org/wikipedia/commons/0/0c/Cow_female_black_white.jpg'
+		model_name = 'images'
+		#data_path = '/home/www/brain/data/images/' + env + '/'
+	
+		file_path = './data/images/upload/file.jpg'
 		urllib.urlretrieve(image_url, file_path )
+	
 		im = Image.open(file_path)
-
-		try:
-			im_aux = np.array(im,dtype=theano.config.floatX)
-			im_converted = True
-		except TypeError, e:
-			im_converted = False
-			print e
-				
-		if im_converted == True:
-			try:
-				if im_aux.shape[2] == 4:
-					background = Image.new("RGB", im.size, (255, 255, 255))
-					background.paste(im, mask=im.split()[3]) # 3 is the alpha channel
-					im = background
-			except Exception, e:
-				print e
-
+		im = im.convert('L')
 		im = self.scale_and_crop_img(im)
-		im = np.asarray(im, dtype=theano.config.floatX) / 256.
+		im = np.asarray(im) / 256
+		im = self.flaten_aux(im)
+		#print im.shape
+	
+		pkl_file = open( self.data_path + 'pca_' + self.mode + '.pkl', 'rb')
+		pca = cPickle.load(pkl_file)
 
-		# Reduce the dimension of the dataset using a denoise Autoencoder that we previously trained
-		a = self.dimReductionSdA([im])[0]
-
-		# Load the compressed representation of our images
-		pkl_file = open( self.data_path + 'X_compressed.pkl', 'rb')
-		X_compressed = cPickle.load(pkl_file)
-
-		# Load the document index of the previous loaded images. The id is the document id that we have in the database
-		pkl_file = open( self.data_path + 'im_index_all.pkl', 'rb')
-		im_index = cPickle.load(pkl_file)
+		im = pca.transform(im)
+		print im[0].shape
 		
-		X = np.asarray(X_compressed,dtype=theano.config.floatX)
-
-		# Compare the given image with all the images in the dataset and store the distances in an auxiliar list
-		distances = np.zeros(len(X))
-		for i in xrange(0,len(X)):
-			b = X[i]
+		# Load X
+	
+		a = im[0]
+		#print a
+		# We just need to fill the upper diagonal
+		for j in xrange(i,len(X)):
+			b = X[j]
 			d = self.cosine_distance(a,b)
-			distances[i] = d
-
-		# Sort the indices and get the indices of the sorted array so we can get the document id later
-		distances_index = np.argsort(distances)[::-1]
-
-		# Top 3 matches
-		# print im_index[distances_index[0]]
-		# print im_index[distances_index[1]]
-		# print im_index[distances_index[2]]
-
-		im_index_aux = []
-		for i in xrange(0,len(distances_index)):
-			im_index_aux.append(im_index[distances_index[i]])
-			if i == num_recommendations:
-				break
-
-		im_index = im_index_aux
-
-		return im_index, model_name
+			#Uncomment this if you want to use cross-correlate for 2D arrays http://docs.scipy.org/doc/scipy-0.16.0/reference/generated/scipy.signal.correlate2d.html
+			# c = c2d(a, b, mode='same')
+			# d = c.max()
+			#d = dist.euclidean(a, b)
+			#d = dist.cityblock(a, b)
+			if d == 1 and i != j:
+				#print "Im1 {} Im2 {}".format(self.im_index[i], self.im_index[j])
+				duplicated_items.append(self.im_index[j])
+	
+			if i == j or d == 1:
+				d = -np.inf
 
 	""" get products per category
 
@@ -1496,35 +1539,168 @@ class FetexImage(object):
 		ORDER BY total DESC
 
 	"""
+def func(a,b):
+	return a+b
+
+def func_star(a_b):
+	"""Convert `f([1,2])` to `f(1,2)` call."""
+	return func(*a_b)
+
+def func_sim(a_b_c_d_e):
+	"""Convert `f([1,2])` to `f(1,2)` call."""
+	#return func(*a_b)
+	return sim(*a_b_c_d_e)
+
+def sim(cpu_index,X,items_per_cpu,num_items,im_index):
+	i = cpu_index
+
+	start_i = items_per_cpu * i
+	stop_i = items_per_cpu * (i + 1) if items_per_cpu * (i + 1) < num_items else num_items
+	print "start_i:{}".format(start_i)
+	if i != 0:
+		start_i = start_i + 1
+	# duplicated_items = []
+	items_list = []
+	fetex_image = FetexImage()
+	# print "this is going to iterate for:{}".format(len(xrange(start_i,stop_i)))
+	for i in xrange(start_i,stop_i):
+		a = X[i]
+
+		#print a
+		# We just need to fill the upper diagonal
+		# Remember to uncomment this if you are not using the autoencoder
+		#for j in xrange(i,len(X)):
+		#print "this is going to iterate for:{}".format(len(xrange(i,len(X))))
+		for j in xrange(i,len(X)):
+			aux = {'item_id_x' : None , 'item_id_y' : None , 'distance' : None}
+			b = X[j]
+			#uncomment this if you want to use the cosine distance
+			d = fetex_image.cosine_distance(a,b)
+			#Uncomment this if you want to use cross-correlate for 2D arrays http://docs.scipy.org/doc/scipy-0.16.0/reference/generated/scipy.signal.correlate2d.html
+			# c = c2d(a, b, mode='same')
+			# d = c.max()
+			#Uncomment this for euclidean distance
+			# d = dist.euclidean(a, b)
+			#d = dist.cityblock(a, b)
+
+			# Uncomment this if you want to use the euclidean distance
+			if d == 0 and i != j:
+				duplicated_items.append(im_index[j])
+
+			if i == j or d == 0:
+				d = -np.inf
+
+			aux['item_id_x'] = im_index[i]
+			aux['item_id_y'] = im_index[j]
+			aux['distance'] = d
+			#q.put(aux)
+			items_list.append(aux)
+
+	return items_list
+
 if __name__ == '__main__':
-	import cProfile
-	import re
+	
 	#data_path = '/Applications/MAMP/htdocs/DeepLearningTutorials/data/'
 	data_path = '/Applications/MAMP/htdocs/AI/ml_server/data/images/localhost/'
-	#data_path = '/Applications/MAMP/htdocs/DeepLearningTutorials/data/'
 	#folder = '/Applications/MAMP/htdocs/DeepLearningTutorials/data/cnn-furniture/'
-	classes = ["stairs","ceilings","building-areas-systems"]
-	# classes = ["floors-accessories","ground-substructure", "building-areas-systems",
- #            "furniture-fittings","stairs","rooflights-roof-windows",
- #            "wall-finishes","ceilings","communications-transport-security",
- #            "external-works","green-building-products","insulation",
- #            "building-materials","hvac-cooling-systems","drainage-water-supply",
- #            "roof-structures-finishes","lighting","structural-frames-walls",
- #            "doors-and-doorways","bathroom-sanitary-fittings","windows-accessories"]
-	#fe = FetexImage(verbose=True,support_per_class=1000,data_path=data_path, dataset='categories' ,mode='L', classes = classes)
-	fe = FetexImage(verbose=True,support_per_class=800,data_path=data_path, dataset='categories' ,mode='RGB', classes = classes)
+	#fe = FetexImage(verbose=True,support_per_class=10,folder=folder)
+	#classes = 
+	#classes = ["building-areas-systems","ground-substructure","floors-accessories"]
+#	classes = ["stairs","ceilings"]
+	classes = ["floors-accessories","ground-substructure", "building-areas-systems",
+            "furniture-fittings","stairs","rooflights-roof-windows",
+            "wall-finishes","ceilings","communications-transport-security",
+            "external-works","green-building-products","insulation",
+            "building-materials","hvac-cooling-systems","drainage-water-supply",
+            "roof-structures-finishes","lighting","structural-frames-walls",
+            "doors-and-doorways","bathroom-sanitary-fittings","windows-accessories"]
+	fe = FetexImage(verbose=True,support_per_class=300,data_path=data_path, dataset='categories_gpu' ,mode='L', classes = classes)
 	#fe.scale_and_crop_test('/Applications/MAMP/htdocs/DeepLearningTutorials/data/cnn-furniture/n03131574-craddle/n03131574_16.JPEG')
 	#print fe.convert_to_bw_and_scale()
 	#train_set,valid_set,test_set = fe.processImagesPipeline()
-	#fe.ImagePipeline(cnn_pipe=False)
-	#fe.getRecommendations('http://www.wood-floor.co.uk/images/doors/door-headers/Wood_Door-Liner_skirting.jpg',10)
-	# fe.getRecommendations('https://s3-eu-west-1.amazonaws.com/specifiedbypro/4609/8889/calibre-windows_UPVC-Doors-and-Panels_Images_Image032.jpg',10)
-	#fe.getRecommendations('http://hamptonroadshappyhour.com/sites/default/files/aa_carrotini_3.jpg',10)
-	cProfile.run("fe.getRecommendations('https://s3-eu-west-1.amazonaws.com/specifiedbypro/4609/8889/calibre-windows_UPVC-Doors-and-Panels_Images_Image032.jpg',10)", 'restats')
+	X, duplicates = fe.ImagePipeline(cnn_pipe=False)
 
-	import pstats
-	p = pstats.Stats('restats')
-	p.sort_stats('cumulative').print_stats(20)
-	p.sort_stats('tottime').print_stats(20)
+	# num_cpus = multiprocessing.cpu_count()
+	# num_items = len(X)
+	# items_per_cpu = int(math.ceil(num_items / num_cpus))
+
+	# #if self.verbose:
+	# print "num_cpus: {} num_items:{} items_per_cpu:{}".format(num_cpus,num_items,items_per_cpu)
+	# start_time = timeit.default_timer()
+	# #from functools import partial
+
+	# import itertools
+	# first_arg = range(0,num_cpus)
+	# second_arg = X
+	# third_arg = items_per_cpu
+	# fourth_arg = num_items
+	# fifth_arg = fe.im_index
 	
-	# p.strip_dirs().sort_stats(-1).print_stats()
+	# # a_args = [1,2,3]
+	# # second_arg = 1
+	# # third_arg = X
+ #   # pool.map(func_star, itertools.izip(a_args, itertools.repeat(second_arg)))
+	# pool = multiprocessing.Pool(processes = num_cpus)
+	# #print pool.map(similarImages2, [(X,0,items_per_cpu,num_items),(X,1,items_per_cpu,num_items),(X,2,items_per_cpu,num_items),(X,3,items_per_cpu,num_items)])
+	# #result = pool.map(func_star, itertools.izip(a_args, itertools.repeat(second_arg)))
+	# #func_sim()
+	
+	# result = pool.map(func_sim, itertools.izip(first_arg, itertools.repeat(second_arg), itertools.repeat(third_arg), itertools.repeat(fourth_arg),itertools.repeat(fifth_arg)))
+
+	# end_time = timeit.default_timer()
+	# elapsed_time = ((end_time - start_time))
+	# print "Elapsed time {}s finding similar images".format(elapsed_time)
+
+	# #print result
+	# #result = pool.apply_async(f, args=([1,1],[1,1]))
+	# #print result.get()
+	# #print result.get()
+
+	# #fe.downloadImagesCSV()
+	# #fe.imageSimilarityPipeline()
+	# #fe.createFolderStructure()
+	"""
+	Some early work on multiprocessing
+	images = fe.readImagesCSV()
+	#print images
+	from multiprocessing import Process, Pool
+
+	start_time = timeit.default_timer()
+
+	def f(name):
+		#print 'hello :{}'.format(name)
+		j = 0
+		for i in xrange(0,1000000000):
+			j += 1
+			#print 'hello :{} i:{}'.format(name,i)
+		print "j:{}".format(j)
+
+	# p = Process(target=f, args=('bob',))
+	# p2 = Process(target=f, args=('fisting',))
+
+	p = Process(target=fe.downloadImagesCSV, args=(images[:10000],))
+	p2 = Process(target=fe.downloadImagesCSV, args=(images[10001:20000],))
+	p3 = Process(target=fe.downloadImagesCSV, args=(images[20001:],))
+
+	p.start()
+	p2.start()
+	p3.start()
+
+	p.join()
+	p2.join()
+	p3.join()
+
+	# fe.downloadImagesCSV(images[0:50])
+	# fe.downloadImagesCSV(images[51:100])
+
+	# f('bob')
+	# f('fisting')
+	
+	#pool = Pool(processes=4)              # start 4 worker processes
+	#result = pool.apply_async(f, [10])    # evaluate "f(10)" asynchronously
+	# print result.get(timeout=1)           # prints "100" unless your computer is *very* slow
+	#pool.map(f, [0,1,2,3,4])
+
+	end_time = timeit.default_timer()
+	elapsed_time = ((end_time - start_time))
+	print "Elapsed time {}s".format(elapsed_time)"""

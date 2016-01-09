@@ -225,10 +225,49 @@ class MLP(object):
 
         return predictions
 
+def get_learned_functions():
+
+    rng = numpy.random.RandomState(1234)
+    x = T.matrix('x')
+
+    pkl_file = open( '../data/f1_and_params.pkl', 'rb')
+    params = cPickle.load(pkl_file)
+
+    f1_and = MLP(
+        rng=rng,
+        input=x,
+        n_in=2,
+        n_hidden=6,
+        n_out=2,
+    )
+
+    #set up parameters
+    f1_and.hiddenLayer.W = params[0]
+    f1_and.hiddenLayer.b = params[1]
+    f1_and.logRegressionLayer.W = params[2]
+    f1_and.logRegressionLayer.b = params[3]
+
+    pkl_file = open( '../data/f1_or_params.pkl', 'rb')
+    params = cPickle.load(pkl_file)
+
+    f1_or = MLP(
+        rng=rng,
+        input=x,
+        n_in=2,
+        n_hidden=6,
+        n_out=2,
+    )
+
+    #set up parameters
+    f1_or.hiddenLayer.W = params[0]
+    f1_or.hiddenLayer.b = params[1]
+    f1_or.logRegressionLayer.W = params[2]
+    f1_or.logRegressionLayer.b = params[3]
+    return f1_and,f1_or
 
 
 def test_mlp(learning_rate=0.01, L1_reg=0.00, L2_reg=0.0001, n_epochs=200,
-             dataset='mnist.pkl.gz', batch_size=30, n_hidden=6):
+             dataset='mnist.pkl.gz', batch_size=2, n_hidden=6):
     """
     Demonstrate stochastic gradient descent optimization for a multilayer
     perceptron
@@ -256,44 +295,9 @@ def test_mlp(learning_rate=0.01, L1_reg=0.00, L2_reg=0.0001, n_epochs=200,
 
 
    """
-    rng = numpy.random.RandomState(1234)
-    x = T.matrix('x')
 
-    pkl_file = open( '../data/f1_and_params.pkl', 'rb')
-    params = cPickle.load(pkl_file)
+    f1_and,f1_or = get_learned_functions()
 
-    f1_and = MLP(
-        rng=rng,
-        input=x,
-        n_in=2,
-        n_hidden=n_hidden,
-        n_out=2,
-    )
-
-    #set up parameters
-    f1_and.hiddenLayer.W = params[0]
-    f1_and.hiddenLayer.b = params[1]
-    f1_and.logRegressionLayer.W = params[2]
-    f1_and.logRegressionLayer.b = params[3]
-
-    pkl_file = open( '../data/f1_or_params.pkl', 'rb')
-    params = cPickle.load(pkl_file)
-
-    f1_or = MLP(
-        rng=rng,
-        input=x,
-        n_in=2,
-        n_hidden=n_hidden,
-        n_out=2,
-    )
-
-    #set up parameters
-    f1_or.hiddenLayer.W = params[0]
-    f1_or.hiddenLayer.b = params[1]
-    f1_or.logRegressionLayer.W = params[2]
-    f1_or.logRegressionLayer.b = params[3]
-
-    #print f1_or.predict([[0,1]])
     #datasets = load_data(dataset)
 
     # test_set_x, test_set_y = datasets[2]
@@ -319,20 +323,13 @@ def test_mlp(learning_rate=0.01, L1_reg=0.00, L2_reg=0.0001, n_epochs=200,
         [1,1,0,1],
         [1,1,1,1],
     ]
-    X_reduced = []
-    for x in X:
-        y_l = f1_or.predict([x[0:2]])[0]
-        y_r = f1_and.predict([x[2:4]])[0]
-        #print y_l
-        #X_left.append(x[0:2])
-        #X_right.append(x[2:4])
-        X_reduced.append([y_l,y_r])
+    # X_reduced = []
+    # for x in X:
+    #     y_l = f1_or.predict([x[0:2]])[0]
+    #     y_r = f1_and.predict([x[2:4]])[0]
+    #     X_reduced.append([y_l,y_r])
     
-    #X = zip(X_left,X_right)
-    X = X_reduced
-    #print X
-    #return 1
-
+    # X = X_reduced
 
     Y = [
         1,
@@ -352,8 +349,8 @@ def test_mlp(learning_rate=0.01, L1_reg=0.00, L2_reg=0.0001, n_epochs=200,
         0
     ]
 
-    X = X * 10
-    Y = Y * 10
+    # X = X * 10
+    # Y = Y * 10
 
     #OR 
     # X = [
@@ -464,8 +461,8 @@ def test_mlp(learning_rate=0.01, L1_reg=0.00, L2_reg=0.0001, n_epochs=200,
     random.shuffle(combined)
         
     X[:], Y[:] = zip(*combined)
-    print X
-    print Y
+    # print X
+    # print Y
     X = numpy.asarray(X, dtype=theano.config.floatX)
       
     train_length = int(round(len(X) * 0.60))
@@ -623,6 +620,62 @@ def test_mlp(learning_rate=0.01, L1_reg=0.00, L2_reg=0.0001, n_epochs=200,
         epoch = epoch + 1
         for minibatch_index in xrange(n_train_batches):
 
+            # update train set X train_set_x[index * batch_size: (index + 1) * batch_size],
+            #get current batch
+            x_minibatch = train_set_x.get_value()
+            y_minibatch = train_set_x.get_value()
+
+            x_minibatch = x_minibatch[minibatch_index * batch_size: (minibatch_index + 1) * batch_size]
+            y_minibatch = y_minibatch[minibatch_index * batch_size: (minibatch_index + 1) * batch_size][0]
+
+            X_reduced = []
+            Y_reduced = []
+
+            index = 0
+            for x in x_minibatch:
+                
+                print "x"
+                print x
+
+                y_l = f1_or.predict([x[0:2]])[0]
+                y_r = f1_or.predict([x[2:4]])[0]
+
+                X_reduced.append([y_l,y_r])
+                Y_reduced.append(y_minibatch[index])
+
+                y_l = f1_or.predict([x[0:2]])[0]
+                y_r = f1_and.predict([x[2:4]])[0]
+
+                X_reduced.append([y_l,y_r])
+                Y_reduced.append(y_minibatch[index])
+
+                y_l = f1_and.predict([x[0:2]])[0]
+                y_r = f1_or.predict([x[2:4]])[0]
+
+                X_reduced.append([y_l,y_r])
+                Y_reduced.append(y_minibatch[index])
+
+                y_l = f1_and.predict([x[0:2]])[0]
+                y_r = f1_and.predict([x[2:4]])[0]
+
+                X_reduced.append([y_l,y_r])
+                Y_reduced.append(y_minibatch[index])
+
+                print "current prediction"
+                #print classifier.predict([X_reduced[0]])
+                print classifier.predict(X_reduced)
+
+                print "X_reduced"
+                print X_reduced
+
+                print "Y_reduced"
+                print Y_reduced
+                # calculate best option
+                index += 1
+                break
+
+            #print x_minibatch
+
             minibatch_avg_cost = train_model(minibatch_index)
             # iteration number
             iter = (epoch - 1) * n_train_batches + minibatch_index
@@ -677,9 +730,12 @@ def test_mlp(learning_rate=0.01, L1_reg=0.00, L2_reg=0.0001, n_epochs=200,
                           os.path.split(__file__)[1] +
                           ' ran for %.2fm' % ((end_time - start_time) / 60.))
     
-    """classifier.input = datasets[0][0]
+"""    #classifier.input = datasets[0][0]
+    #print X[0]
+    #
+    #classifier.input = X[0:4]
 
-    print classifier.predict(datasets[0][0])
+    #print classifier.predict(X[0:4])
 
     # minimum hidden units to learn or is 2 and to learn AND is 6
     params = classifier.params
@@ -706,7 +762,9 @@ def test_mlp(learning_rate=0.01, L1_reg=0.00, L2_reg=0.0001, n_epochs=200,
     f1_or.logRegressionLayer.W = params[2]
     f1_or.logRegressionLayer.b = params[3]
 
-    print f1_or.predict(datasets[0][0])"""
+    #print f1_or.predict(datasets[0][0])
+    print X[0:2]
+    print f1_or.predict(X[0:2])"""
 
     # print numpy.tanh(numpy.dot(classifier.input,params[0].get_value()) + params[1].get_value())
     # print "----------------------------"
